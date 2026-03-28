@@ -83,3 +83,7 @@ xcodebuild -project ActiveSpace.xcodeproj \
 
 - macOS 13.0+
 - **Accessibility permission** — required for AppleScript key simulation. macOS will prompt on first space switch attempt.
+
+---
+
+ActiveSpace is provided by [Jorvik Software](https://jorviksoftware.cc/). If you find it useful, consider [buying me a coffee](https://jorviksoftware.cc/donate).
