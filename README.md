@@ -86,4 +86,4 @@ xcodebuild -project ActiveSpace.xcodeproj \
 
 ---
 
-ActiveSpace is provided by [Jorvik Software](https://jorviksoftware.cc/). If you find it useful, consider [buying me a coffee](https://jorviksoftware.cc/donate).
+ActiveSpace is part of [Jorvik Software](https://jorviksoftware.cc/). If you find it useful, consider [buying me a coffee](https://jorviksoftware.cc/donate).
