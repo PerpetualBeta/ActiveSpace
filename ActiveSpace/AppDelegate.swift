@@ -7,12 +7,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let observer = SpaceObserver()
     private var popover: NSPopover?
-    private var aboutPopover: NSPopover?
-    private var aboutMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
+    let updateChecker = JorvikUpdateChecker(repoName: "ActiveSpace")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        SpaceSwitcher.ensureAccessibility()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         updateIcon()
+        updateChecker.checkOnSchedule()
 
         observer.$currentSpaceIndex
             .receive(on: DispatchQueue.main)
@@ -32,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateIcon() }
             .store(in: &cancellables)
+
     }
 
     // MARK: - Click handling
@@ -77,40 +79,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Context menu (right-click)
 
     private func showContextMenu() {
-        let menu = NSMenu()
-
-        let aboutItem = NSMenuItem(title: "About ActiveSpace", action: #selector(openAbout), keyEquivalent: "")
-        aboutItem.target = self
-        menu.addItem(aboutItem)
-
-        menu.addItem(.separator())
-
-        menu.addItem(NSMenuItem(title: "Quit ActiveSpace", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
+        let menu = JorvikMenuBuilder.buildMenu(
+            appName: "ActiveSpace",
+            aboutAction: #selector(openAbout),
+            settingsAction: #selector(openSettings),
+            target: self
+        )
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
     }
 
     @objc private func openAbout() {
-        guard let button = statusItem.button else { return }
-        let p = NSPopover()
-        p.behavior = .applicationDefined
-        p.animates = true
-        let hc = NSHostingController(rootView: AboutView(appName: "ActiveSpace", onDismiss: { [weak self] in self?.closeAbout() }))
-        hc.view.wantsLayer = true
-        hc.view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        p.contentViewController = hc
-        p.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        aboutPopover = p
-        aboutMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.closeAbout()
-        }
+        JorvikAboutView.showWindow(
+            appName: "ActiveSpace",
+            repoName: "ActiveSpace",
+            productPage: "utilities/activespace"
+        )
     }
 
-    private func closeAbout() {
-        aboutPopover?.performClose(nil)
-        aboutPopover = nil
-        if let m = aboutMonitor { NSEvent.removeMonitor(m); aboutMonitor = nil }
+    @objc private func openSettings() {
+        JorvikSettingsView.showWindow(
+            appName: "ActiveSpace",
+            updateChecker: updateChecker
+        ) { [weak self] in
+            Section("Permissions") {
+                HStack {
+                    Text("Accessibility")
+                    Spacer()
+                    if AXIsProcessTrusted() {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    } else {
+                        Button("Grant Access") {
+                            SpaceSwitcher.ensureAccessibility()
+                        }
+                        .font(.caption)
+                    }
+                }
+            }
+
+            // No pill settings — ActiveSpace already has a custom icon with built-in contrast
+        }
     }
 
     // MARK: - Icon

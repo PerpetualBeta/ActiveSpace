@@ -1,13 +1,25 @@
 import AppKit
 
-/// Switches Mission Control spaces using NSAppleScript (in-process).
-/// Runs in the app's own TCC context, so the Accessibility + Automation
-/// permissions already granted to the signed app apply directly.
+/// Switches Mission Control spaces using AppleScript keystroke injection
+/// via System Events. Requires Accessibility permission.
 enum SpaceSwitcher {
+
+    /// Prompts for Accessibility permission if not already granted.
+    /// Call once at app launch.
+    static func ensureAccessibility() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+        AXIsProcessTrustedWithOptions(options)
+    }
 
     static func switchTo(index: Int, observer: SpaceObserver) {
         let steps = index - observer.currentSpaceIndex
         guard steps != 0 else { return }
+
+        guard AXIsProcessTrusted() else {
+            NSLog("ActiveSpace: Accessibility permission not granted, cannot switch spaces")
+            ensureAccessibility()
+            return
+        }
 
         let keyCode = steps > 0 ? 124 : 123   // Right Arrow / Left Arrow
         let count   = abs(steps)
@@ -19,8 +31,6 @@ enum SpaceSwitcher {
         }
         lines.append("end tell")
 
-        // NSAppleScript must run on the main thread.
-        // The call is fast (single keystroke), so a brief block is fine.
         DispatchQueue.main.async {
             var error: NSDictionary?
             let script = NSAppleScript(source: lines.joined(separator: "\n"))
