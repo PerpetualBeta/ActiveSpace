@@ -18,7 +18,7 @@ enum MenuBarIcon {
         let width: CGFloat  = max(22, textSize.width + hPad * 2)
 
         let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { rect in
-            let isDark = NSAppearance.current.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
 
             // Light mode: dark bubble + white text
             // Dark mode:  white bubble + dark text
