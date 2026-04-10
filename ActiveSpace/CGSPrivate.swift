@@ -13,7 +13,16 @@ func CGSMainConnectionID() -> CGSConnectionID
 @discardableResult
 func CGSGetWorkspace(_ conn: CGSConnectionID, _ workspace: inout Int32) -> OSStatus
 
+/// Returns the ManagedSpaceID of the currently active space.
+@_silgen_name("CGSGetActiveSpace")
+func CGSGetActiveSpace(_ conn: CGSConnectionID) -> UInt64
+
 /// Returns an array of display dictionaries, each containing a "Spaces" array
 /// and a "Current Space" dict with the currently active space on that display.
 @_silgen_name("CGSCopyManagedDisplaySpaces")
 func CGSCopyManagedDisplaySpaces(_ conn: CGSConnectionID) -> CFArray
+
+/// Switches the active space on the given display. Instant — no animation.
+@_silgen_name("CGSManagedDisplaySetCurrentSpace")
+@discardableResult
+func CGSManagedDisplaySetCurrentSpace(_ conn: CGSConnectionID, _ displayID: CFString, _ spaceID: Int) -> OSStatus
