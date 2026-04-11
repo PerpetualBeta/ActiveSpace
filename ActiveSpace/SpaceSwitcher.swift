@@ -52,6 +52,14 @@ enum SpaceSwitcher {
         for _ in 0..<abs(steps) {
             postSwitchGesture(right: right)
         }
+
+        // After the switch, check if there's a visible app window on
+        // the new space. If not, nudge Finder to refresh the menu bar.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            if !hasVisibleAppWindow() {
+                nudgeDesktop()
+            }
+        }
     }
 
     /// Move to the next space, wrapping from last → first.
@@ -126,5 +134,32 @@ enum SpaceSwitcher {
 
         endDock.post(tap: .cgSessionEventTap)
         endGesture.post(tap: .cgSessionEventTap)
+    }
+
+    /// Returns true if there's at least one visible app window (layer 0) on screen.
+    private static func hasVisibleAppWindow() -> Bool {
+        guard let list = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+        ) as? [[String: Any]] else { return false }
+
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        for entry in list {
+            guard let pid = entry[kCGWindowOwnerPID as String] as? pid_t, pid != myPID,
+                  let layer = entry[kCGWindowLayer as String] as? Int, layer == 0,
+                  let bounds = entry[kCGWindowBounds as String] as? [String: Double],
+                  (bounds["Width"] ?? 0) >= 50, (bounds["Height"] ?? 0) >= 50 else { continue }
+            return true
+        }
+        return false
+    }
+
+    /// Activate Finder to force the Dock to refresh menu bar ownership.
+    /// Uses AppleScript — lightweight and doesn't interfere with mouse state.
+    private static func nudgeDesktop() {
+        let script = NSAppleScript(source: """
+            tell application "Finder" to activate
+        """)
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
     }
 }

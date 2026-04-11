@@ -24,6 +24,8 @@
 		AA000064 /* JorvikMenuBarPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000074 /* JorvikMenuBarPill.swift */; };
 		AA000065 /* JorvikWindowHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000075 /* JorvikWindowHelper.swift */; };
 		AA000066 /* JorvikShortcutRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000076 /* JorvikShortcutRecorder.swift */; };
+		AA000067 /* VirtualDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000077 /* VirtualDisplay.swift */; };
+		AA000068 /* VirtualDisplayHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = AA000078 /* VirtualDisplayHelper.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +49,10 @@
 		AA000074 /* JorvikMenuBarPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikMenuBarPill.swift; sourceTree = "<group>"; };
 		AA000075 /* JorvikWindowHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikWindowHelper.swift; sourceTree = "<group>"; };
 		AA000076 /* JorvikShortcutRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikShortcutRecorder.swift; sourceTree = "<group>"; };
+		AA000077 /* VirtualDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplay.swift; sourceTree = "<group>"; };
+		AA000078 /* VirtualDisplayHelper.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = VirtualDisplayHelper.m; sourceTree = "<group>"; };
+		AA000079 /* VirtualDisplayHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VirtualDisplayHelper.h; sourceTree = "<group>"; };
+		AA000081 /* ActiveSpace-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ActiveSpace-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,6 +89,10 @@
 				AA000040 /* switch_helper */,
 				AA000041 /* AboutView.swift */,
 				AA000042 /* ActiveSpace.entitlements */,
+				AA000077 /* VirtualDisplay.swift */,
+				AA000078 /* VirtualDisplayHelper.m */,
+				AA000079 /* VirtualDisplayHelper.h */,
+				AA000081 /* ActiveSpace-Bridging-Header.h */,
 				AA000080 /* JorvikKit */,
 			);
 			path = ActiveSpace;
@@ -195,6 +205,8 @@
 				AA000064 /* JorvikMenuBarPill.swift in Sources */,
 				AA000065 /* JorvikWindowHelper.swift in Sources */,
 				AA000066 /* JorvikShortcutRecorder.swift in Sources */,
+				AA000067 /* VirtualDisplay.swift in Sources */,
+				AA000068 /* VirtualDisplayHelper.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -338,6 +350,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "ActiveSpace/ActiveSpace-Bridging-Header.h";
 				SWIFT_VERSION = 5.9;
 			};
 			name = Debug;
@@ -363,6 +376,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "ActiveSpace/ActiveSpace-Bridging-Header.h";
 				SWIFT_VERSION = 5.9;
 			};
 			name = Release;
