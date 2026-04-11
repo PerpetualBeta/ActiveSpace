@@ -106,6 +106,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Event tap
 
+    private var hasShownInputMonitoringAlert = false
+
     private func setupEventTap() {
         guard _eventTap == nil else { return }
 
@@ -118,7 +120,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             callback: hotkeyTapCallback,
             userInfo: nil
         ) else {
-            NSLog("ActiveSpace: Failed to create CGEventTap — Accessibility permission needed")
+            NSLog("ActiveSpace: Failed to create CGEventTap")
+
+            // If Accessibility is granted but the tap still fails,
+            // the user likely needs to grant Input Monitoring.
+            if AXIsProcessTrusted() && !hasShownInputMonitoringAlert {
+                hasShownInputMonitoringAlert = true
+                DispatchQueue.main.async {
+                    let alert = NSAlert()
+                    alert.messageText = "Input Monitoring Required"
+                    alert.informativeText = "ActiveSpace needs Input Monitoring permission to use keyboard shortcuts for space switching.\n\nPlease add ActiveSpace in System Settings \u{2192} Privacy & Security \u{2192} Input Monitoring, then relaunch."
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "Open System Settings")
+                    alert.addButton(withTitle: "Later")
+
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
+                    }
+                }
+            }
             return
         }
 
@@ -290,6 +310,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         } else {
                             Button("Grant Access") {
                                 SpaceSwitcher.ensureAccessibility()
+                            }
+                            .font(.caption)
+                        }
+                    }
+                    HStack {
+                        Text("Input Monitoring")
+                        Spacer()
+                        if _eventTap != nil {
+                            Label("Granted", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.caption)
+                        } else {
+                            Button("Grant Access") {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
                             }
                             .font(.caption)
                         }
