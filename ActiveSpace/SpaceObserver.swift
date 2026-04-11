@@ -5,7 +5,7 @@ import Combine
 struct SpaceInfo {
     let managedSpaceID: Int
     let uuid: String
-    let displayIdentifier: String   // needed by CGSManagedDisplaySetCurrentSpace
+    let displayIdentifier: String
 }
 
 /// Tracks the current space index (1-based) and total space count across all displays.

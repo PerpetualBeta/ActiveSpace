@@ -10,11 +10,12 @@ private var _nextModifiers: CGEventFlags = []
 private var _prevKeyCode: UInt16 = 0
 private var _prevModifiers: CGEventFlags = []
 
+/// Action dispatched from the tap callback back to the main thread.
+private enum HotkeyAction { case next, prev }
+private var _hotkeyAction: HotkeyAction?
+
 /// The mask of modifier flags we care about when matching shortcuts.
 private let _modifierMask: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
-
-/// Weak back-pointer so the C-compatible callback can reach the delegate.
-private weak var _appDelegate: AppDelegate?
 
 private func hotkeyTapCallback(
     proxy: CGEventTapProxy,
@@ -34,28 +35,29 @@ private func hotkeyTapCallback(
     let flags = event.flags.intersection(_modifierMask)
 
     if _nextKeyCode != 0 && keyCode == _nextKeyCode && flags == _nextModifiers {
-        DispatchQueue.main.async { _appDelegate?.hotkeyFired(.next) }
+        DispatchQueue.main.async { _hotkeyAction = .next; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
         return nil  // consume the event
     }
     if _prevKeyCode != 0 && keyCode == _prevKeyCode && flags == _prevModifiers {
-        DispatchQueue.main.async { _appDelegate?.hotkeyFired(.prev) }
+        DispatchQueue.main.async { _hotkeyAction = .prev; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
         return nil
     }
 
     return Unmanaged.passUnretained(event)
 }
 
+extension Notification.Name {
+    fileprivate static let activeSpaceHotkey = Notification.Name("ActiveSpaceHotkey")
+}
+
 // MARK: - AppDelegate
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-
-    enum HotkeyAction { case next, prev }
 
     private var statusItem: NSStatusItem!
     private let observer = SpaceObserver()
     private var popover: NSPopover?
     private var cancellables = Set<AnyCancellable>()
-    private var tapRetryTimer: Timer?
     let updateChecker = JorvikUpdateChecker(repoName: "ActiveSpace")
 
     // Shortcut state (mirrored to module-level vars for the tap callback)
@@ -71,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        _appDelegate = self
+        VirtualDisplay.create()
         SpaceSwitcher.ensureAccessibility()
         loadShortcuts()
         setupEventTap()
@@ -95,6 +97,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateIcon() }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .activeSpaceHotkey)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.handleHotkey() }
+            .store(in: &cancellables)
     }
 
     // MARK: - Event tap
@@ -111,33 +118,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             callback: hotkeyTapCallback,
             userInfo: nil
         ) else {
-            NSLog("ActiveSpace: CGEventTap creation failed — will retry (Accessibility permission may be pending)")
-            startTapRetry()
+            NSLog("ActiveSpace: Failed to create CGEventTap — Accessibility permission needed")
             return
         }
-
-        tapRetryTimer?.invalidate()
-        tapRetryTimer = nil
 
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         _eventTap = tap
-        NSLog("ActiveSpace: CGEventTap created successfully")
-    }
-
-    /// Retries event tap creation every 2 seconds until it succeeds
-    /// (e.g. after the user grants Accessibility permission).
-    private func startTapRetry() {
-        guard tapRetryTimer == nil else { return }
-        tapRetryTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.setupEventTap()
-        }
     }
 
     // MARK: - Hotkey handling
 
-    func hotkeyFired(_ action: HotkeyAction) {
+    private func handleHotkey() {
+        guard let action = _hotkeyAction else { return }
+        _hotkeyAction = nil
         switch action {
         case .next: SpaceSwitcher.switchNext(observer: observer)
         case .prev: SpaceSwitcher.switchPrev(observer: observer)
