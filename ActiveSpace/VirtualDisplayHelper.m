@@ -19,13 +19,14 @@ static id _virtualDisplay = nil;
         return nil;
     }
 
-    // Create mode: 640x480 @ 60Hz via NSInvocation (3 primitive args)
+    // Create mode: 1x1 @ 1Hz — just enough to force UUID-based display identifiers.
+    // A tiny display prevents macOS from relocating or resizing user windows onto it.
     SEL modeSel = NSSelectorFromString(@"initWithWidth:height:refreshRate:");
     NSMethodSignature *modeSig = [CGVirtualDisplayMode instanceMethodSignatureForSelector:modeSel];
     NSInvocation *modeInv = [NSInvocation invocationWithMethodSignature:modeSig];
     modeInv.selector = modeSel;
-    unsigned int w = 640, h = 480;
-    double rate = 60.0;
+    unsigned int w = 1, h = 1;
+    double rate = 1.0;
     [modeInv setArgument:&w atIndex:2];
     [modeInv setArgument:&h atIndex:3];
     [modeInv setArgument:&rate atIndex:4];
@@ -45,9 +46,9 @@ static id _virtualDisplay = nil;
     [desc setValue:@(0xACE5) forKey:@"vendorID"];
     [desc setValue:@(0x0001) forKey:@"productID"];
     [desc setValue:@(0x0001) forKey:@"serialNum"];
-    [desc setValue:@(640) forKey:@"maxPixelsWide"];
-    [desc setValue:@(480) forKey:@"maxPixelsHigh"];
-    [desc setValue:[NSValue valueWithSize:NSMakeSize(100, 75)] forKey:@"sizeInMillimeters"];
+    [desc setValue:@(1) forKey:@"maxPixelsWide"];
+    [desc setValue:@(1) forKey:@"maxPixelsHigh"];
+    [desc setValue:[NSValue valueWithSize:NSMakeSize(1, 1)] forKey:@"sizeInMillimeters"];
     [desc setValue:dispatch_get_main_queue() forKey:@"queue"];
 
     // Create virtual display
