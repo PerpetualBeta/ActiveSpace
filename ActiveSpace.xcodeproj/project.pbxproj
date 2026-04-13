@@ -26,6 +26,8 @@
 		AA000066 /* JorvikShortcutRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000076 /* JorvikShortcutRecorder.swift */; };
 		AA000067 /* VirtualDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000077 /* VirtualDisplay.swift */; };
 		AA000068 /* VirtualDisplayHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = AA000078 /* VirtualDisplayHelper.m */; };
+		AA000069 /* Logging.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000082 /* Logging.swift */; };
+		AA00006A /* TransitionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000083 /* TransitionOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +55,8 @@
 		AA000078 /* VirtualDisplayHelper.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = VirtualDisplayHelper.m; sourceTree = "<group>"; };
 		AA000079 /* VirtualDisplayHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VirtualDisplayHelper.h; sourceTree = "<group>"; };
 		AA000081 /* ActiveSpace-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ActiveSpace-Bridging-Header.h"; sourceTree = "<group>"; };
+		AA000082 /* Logging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging.swift; sourceTree = "<group>"; };
+		AA000083 /* TransitionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransitionOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -93,6 +97,8 @@
 				AA000078 /* VirtualDisplayHelper.m */,
 				AA000079 /* VirtualDisplayHelper.h */,
 				AA000081 /* ActiveSpace-Bridging-Header.h */,
+				AA000082 /* Logging.swift */,
+				AA000083 /* TransitionOverlay.swift */,
 				AA000080 /* JorvikKit */,
 			);
 			path = ActiveSpace;
@@ -207,6 +213,8 @@
 				AA000066 /* JorvikShortcutRecorder.swift in Sources */,
 				AA000067 /* VirtualDisplay.swift in Sources */,
 				AA000068 /* VirtualDisplayHelper.m in Sources */,
+				AA000069 /* Logging.swift in Sources */,
+				AA00006A /* TransitionOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

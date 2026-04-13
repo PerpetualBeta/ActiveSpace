@@ -72,8 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        aslog("applicationDidFinishLaunching: NSScreen.screens.count=\(NSScreen.screens.count)")
         NSApp.setActivationPolicy(.accessory)
-        VirtualDisplay.create()
         SpaceSwitcher.ensureAccessibility()
         loadShortcuts()
         setupEventTap()
@@ -231,8 +231,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 SpaceSwitcher.switchTo(index: index, observer: self.observer)
             }
         )
+
+        // Activate the app so the popover takes key focus — without this, as an
+        // accessory-policy app we don't have focus, so .transient's native Escape
+        // and outside-click handling is unreliable.
+        NSApp.activate(ignoringOtherApps: true)
         p.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        p.contentViewController?.view.window?.makeKey()
         popover = p
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handlePopoverClosed),
+            name: NSPopover.didCloseNotification,
+            object: p
+        )
+    }
+
+    @objc private func handlePopoverClosed() {
+        popover = nil
     }
 
     // MARK: - Context menu (right-click)
@@ -266,20 +283,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return Group {
                 Section("Keyboard Shortcuts") {
                     JorvikShortcutRecorder(
-                        label: "Next Space",
-                        keyCode: Binding(
-                            get: { delegate.nextKeyCode },
-                            set: { delegate.nextKeyCode = $0 }
-                        ),
-                        modifiers: Binding(
-                            get: { delegate.nextModifiers },
-                            set: { delegate.nextModifiers = $0 }
-                        ),
-                        displayString: { delegate.nextShortcutDisplayString() },
-                        onChanged: { delegate.saveShortcuts() },
-                        eventTapToDisable: delegate.currentEventTap
-                    )
-                    JorvikShortcutRecorder(
                         label: "Previous Space",
                         keyCode: Binding(
                             get: { delegate.prevKeyCode },
@@ -290,6 +293,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             set: { delegate.prevModifiers = $0 }
                         ),
                         displayString: { delegate.prevShortcutDisplayString() },
+                        onChanged: { delegate.saveShortcuts() },
+                        eventTapToDisable: delegate.currentEventTap
+                    )
+                    JorvikShortcutRecorder(
+                        label: "Next Space",
+                        keyCode: Binding(
+                            get: { delegate.nextKeyCode },
+                            set: { delegate.nextKeyCode = $0 }
+                        ),
+                        modifiers: Binding(
+                            get: { delegate.nextModifiers },
+                            set: { delegate.nextModifiers = $0 }
+                        ),
+                        displayString: { delegate.nextShortcutDisplayString() },
                         onChanged: { delegate.saveShortcuts() },
                         eventTapToDisable: delegate.currentEventTap
                     )

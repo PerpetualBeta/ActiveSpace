@@ -17,3 +17,31 @@ func CGSGetWorkspace(_ conn: CGSConnectionID, _ workspace: inout Int32) -> OSSta
 /// and a "Current Space" dict with the currently active space on that display.
 @_silgen_name("CGSCopyManagedDisplaySpaces")
 func CGSCopyManagedDisplaySpaces(_ conn: CGSConnectionID) -> CFArray
+
+/// Directly switches the given display to the space with the given ManagedSpaceID,
+/// bypassing the Dock's gesture pipeline entirely. `display` is a CGS display
+/// identifier string ("Main" or a CFUUID string). Stable private API since OS X Lion,
+/// used by WhichSpace, Spaceman, and similar tools.
+@_silgen_name("CGSManagedDisplaySetCurrentSpace")
+func CGSManagedDisplaySetCurrentSpace(_ conn: CGSConnectionID, _ display: CFString, _ spaceID: UInt64)
+
+/// Tells WindowServer to hide a set of spaces, moving their windows off-screen.
+/// Paired with CGSShowSpaces + CGSManagedDisplaySetCurrentSpace to perform a full
+/// visual space transition that cleanly updates Mission Control state.
+@_silgen_name("CGSHideSpaces")
+func CGSHideSpaces(_ conn: CGSConnectionID, _ spaces: CFArray)
+
+/// Tells WindowServer to show a set of spaces, making their windows on-screen.
+@_silgen_name("CGSShowSpaces")
+func CGSShowSpaces(_ conn: CGSConnectionID, _ spaces: CFArray)
+
+/// Freezes WindowServer rendering. Pair with CGSReenableUpdate. Used internally
+/// by Mission Control, Rectangle, and similar tools to batch several CGS
+/// operations without the user seeing intermediate frames. Nested calls are
+/// refcounted — every Disable must be matched by exactly one Reenable.
+@_silgen_name("CGSDisableUpdate")
+func CGSDisableUpdate(_ conn: CGSConnectionID)
+
+/// Resumes WindowServer rendering after a matching CGSDisableUpdate.
+@_silgen_name("CGSReenableUpdate")
+func CGSReenableUpdate(_ conn: CGSConnectionID)

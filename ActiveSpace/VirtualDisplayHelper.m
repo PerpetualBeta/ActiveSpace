@@ -1,27 +1,74 @@
 #import "VirtualDisplayHelper.h"
 #import <CoreGraphics/CoreGraphics.h>
+#import <ApplicationServices/ApplicationServices.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+
+extern void ActiveSpaceLogC(const char *msg);
+
+static void ASLog(NSString *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
+    va_end(args);
+    ActiveSpaceLogC([msg UTF8String]);
+}
 
 @implementation VirtualDisplayHelper
 
 static id _virtualDisplay = nil;
+static NSString *_virtualDisplayUUID = nil;
+
++ (NSString *)displayUUIDString {
+    // Lazily retry UUID lookup if it wasn't available at creation time.
+    if (_virtualDisplay && !_virtualDisplayUUID) {
+        NSNumber *displayID = [_virtualDisplay valueForKey:@"displayID"];
+        CGDirectDisplayID cgID = (CGDirectDisplayID)displayID.unsignedIntValue;
+        CFUUIDRef uuid = CGDisplayCreateUUIDFromDisplayID(cgID);
+        if (uuid) {
+            CFStringRef uuidStr = CFUUIDCreateString(NULL, uuid);
+            if (uuidStr) {
+                _virtualDisplayUUID = (__bridge_transfer NSString *)uuidStr;
+            }
+            CFRelease(uuid);
+        }
+    }
+    return _virtualDisplayUUID;
+}
+
++ (BOOL)isCreated {
+    return _virtualDisplay != nil;
+}
 
 + (NSObject *)create {
-    if (_virtualDisplay) return _virtualDisplay;
+    ASLog(@"VirtualDisplayHelper.create entered");
+    if (_virtualDisplay) {
+        ASLog(@"Virtual display already exists, reusing");
+        return _virtualDisplay;
+    }
 
     Class CGVirtualDisplayMode = NSClassFromString(@"CGVirtualDisplayMode");
     Class CGVirtualDisplayDescriptor = NSClassFromString(@"CGVirtualDisplayDescriptor");
     Class CGVirtualDisplay = NSClassFromString(@"CGVirtualDisplay");
 
-    if (!CGVirtualDisplay) {
-        NSLog(@"ActiveSpace: CGVirtualDisplay not available");
+    ASLog(@"classes — Mode=%@ Descriptor=%@ Display=%@",
+          CGVirtualDisplayMode, CGVirtualDisplayDescriptor, CGVirtualDisplay);
+
+    if (!CGVirtualDisplay || !CGVirtualDisplayDescriptor || !CGVirtualDisplayMode) {
+        ASLog(@"One or more CGVirtualDisplay classes not available");
         return nil;
     }
 
-    // Create mode: 640x480 @ 60Hz via NSInvocation (3 primitive args)
+    // Create mode: 640x480 @ 60Hz. This is large enough that macOS treats it as
+    // a real display (and so forces UUID-based display identifiers, fixing the
+    // single-monitor "Main" identifier issue that breaks Dock gesture routing).
+    // Smaller sizes (e.g. 1x1) get ignored by macOS and don't trigger the fix.
     SEL modeSel = NSSelectorFromString(@"initWithWidth:height:refreshRate:");
     NSMethodSignature *modeSig = [CGVirtualDisplayMode instanceMethodSignatureForSelector:modeSel];
+    if (!modeSig) {
+        ASLog(@"CGVirtualDisplayMode has no initWithWidth:height:refreshRate:");
+        return nil;
+    }
     NSInvocation *modeInv = [NSInvocation invocationWithMethodSignature:modeSig];
     modeInv.selector = modeSel;
     unsigned int w = 640, h = 480;
@@ -33,9 +80,10 @@ static id _virtualDisplay = nil;
     [modeInv invokeWithTarget:modeObj];
     __unsafe_unretained id mode;
     [modeInv getReturnValue:&mode];
+    ASLog(@"mode creation result — %@", mode);
 
     if (!mode) {
-        NSLog(@"ActiveSpace: Failed to create CGVirtualDisplayMode");
+        ASLog(@"Failed to create CGVirtualDisplayMode");
         return nil;
     }
 
@@ -47,7 +95,7 @@ static id _virtualDisplay = nil;
     [desc setValue:@(0x0001) forKey:@"serialNum"];
     [desc setValue:@(640) forKey:@"maxPixelsWide"];
     [desc setValue:@(480) forKey:@"maxPixelsHigh"];
-    [desc setValue:[NSValue valueWithSize:NSMakeSize(100, 75)] forKey:@"sizeInMillimeters"];
+    [desc setValue:[NSValue valueWithSize:NSMakeSize(169, 127)] forKey:@"sizeInMillimeters"];
     [desc setValue:dispatch_get_main_queue() forKey:@"queue"];
 
     // Create virtual display
@@ -59,12 +107,29 @@ static id _virtualDisplay = nil;
     if (display) {
         _virtualDisplay = display;
         NSNumber *displayID = [display valueForKey:@"displayID"];
-        NSLog(@"ActiveSpace: Virtual display created (ID %u)", displayID.unsignedIntValue);
+        CGDirectDisplayID cgID = (CGDirectDisplayID)displayID.unsignedIntValue;
+        CFUUIDRef uuid = CGDisplayCreateUUIDFromDisplayID(cgID);
+        if (uuid) {
+            CFStringRef uuidStr = CFUUIDCreateString(NULL, uuid);
+            if (uuidStr) {
+                _virtualDisplayUUID = (__bridge_transfer NSString *)uuidStr;
+            }
+            CFRelease(uuid);
+        }
+        ASLog(@"Virtual display created (ID %u, UUID %@)", cgID, _virtualDisplayUUID ?: @"unknown");
         return display;
     }
 
-    NSLog(@"ActiveSpace: Failed to create virtual display");
+    ASLog(@"Failed to create virtual display");
     return nil;
+}
+
++ (void)destroy {
+    if (_virtualDisplay) {
+        ASLog(@"Destroying virtual display");
+        _virtualDisplay = nil;
+        _virtualDisplayUUID = nil;
+    }
 }
 
 @end

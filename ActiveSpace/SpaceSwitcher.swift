@@ -1,12 +1,143 @@
 import AppKit
 import CoreGraphics
 
-/// Switches Mission Control spaces instantly by synthesising dock-swipe gesture
-/// events with high velocity, causing the Dock to skip its sliding animation.
-/// Adapted from https://github.com/jurplel/InstantSpaceSwitcher
+/// Switches Mission Control spaces. Uses two techniques depending on the
+/// display configuration, because each has different failure modes on the
+/// other:
+///
+///   - **Single display** → `CGSManagedDisplaySetCurrentSpace` (direct API).
+///     Instant, no flash, no progressive Dock-state corruption. The gesture
+///     approach degrades on single-display configs (windows/menu-bars stop
+///     repainting after repeated switches).
+///
+///   - **Multi-display (incl. spans-displays mode)** → synthetic dock-swipe
+///     gesture. The direct API only flips CGS's current-space flag without
+///     telling WindowServer to move windows or update Mission Control state,
+///     so spaces change numerically but windows stay put and F3 breaks.
+///     The gesture drives a full visual transition across all displays.
 enum SpaceSwitcher {
 
-    // MARK: - Private CGEvent field indices (reverse-engineered)
+    // MARK: - Public API
+
+    /// Prompts for Accessibility permission if not already granted.
+    static func ensureAccessibility() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+        AXIsProcessTrustedWithOptions(options)
+    }
+
+    /// Switch to a specific space index (1-based). No wrap-around.
+    static func switchTo(index: Int, observer: SpaceObserver) {
+        observer.refresh()
+        guard let target = observer.spaceInfo(forIndex: index) else {
+            aslog("switchTo(\(index)): no SpaceInfo — ignoring")
+            return
+        }
+        guard AXIsProcessTrusted() else {
+            aslog("switchTo(\(index)): Accessibility permission not granted")
+            ensureAccessibility()
+            return
+        }
+
+        let current = observer.currentSpaceIndex
+        if index == current {
+            aslog("switchTo(\(index)): already on target, skipping")
+            return
+        }
+
+        if isSingleDisplay() {
+            directSwitch(to: target, from: observer.spaceInfo(forIndex: current))
+        } else {
+            gestureSwitch(from: current, to: index, observer: observer)
+        }
+    }
+
+    /// Move to the next space, wrapping from last → first.
+    static func switchNext(observer: SpaceObserver) {
+        observer.refresh()
+        let total = observer.totalSpaces
+        guard total > 1 else { return }
+        let current = observer.currentSpaceIndex
+        let target = current < total ? current + 1 : 1
+        aslog("switchNext: current=\(current) total=\(total) → target=\(target)")
+        switchTo(index: target, observer: observer)
+    }
+
+    /// Move to the previous space, wrapping from first → last.
+    static func switchPrev(observer: SpaceObserver) {
+        observer.refresh()
+        let total = observer.totalSpaces
+        guard total > 1 else { return }
+        let current = observer.currentSpaceIndex
+        let target = current > 1 ? current - 1 : total
+        aslog("switchPrev: current=\(current) total=\(total) → target=\(target)")
+        switchTo(index: target, observer: observer)
+    }
+
+    /// Toggle between space 1 and 2 (legacy convenience).
+    static func toggle(observer: SpaceObserver) {
+        switchNext(observer: observer)
+    }
+
+    // MARK: - Single-display path (direct API)
+
+    private static func directSwitch(to target: SpaceInfo, from current: SpaceInfo?) {
+        let conn = CGSMainConnectionID()
+        aslog("directSwitch: display=\(target.displayIdentifier) current=\(current?.managedSpaceID ?? -1) → target=\(target.managedSpaceID)")
+        if let current {
+            CGSHideSpaces(conn, [current.managedSpaceID] as CFArray)
+        }
+        CGSShowSpaces(conn, [target.managedSpaceID] as CFArray)
+        CGSManagedDisplaySetCurrentSpace(conn,
+                                         target.displayIdentifier as CFString,
+                                         UInt64(target.managedSpaceID))
+    }
+
+    // MARK: - Multi-display path (synthetic dock-swipe gesture)
+
+    private static func gestureSwitch(from current: Int, to target: Int, observer: SpaceObserver) {
+        // The gesture doesn't wrap, so for wraparound we walk back the long way:
+        // (total - 1) spaces in the opposite direction. Each dock-swipe advances
+        // by exactly one space — the Dock clamps larger progress values.
+        let delta = target - current
+        let steps: Int
+        let right: Bool
+        if delta > 0 {
+            steps = delta
+            right = true
+        } else if delta < 0 {
+            steps = -delta
+            right = false
+        } else {
+            return
+        }
+
+        aslog("gestureSwitch: current=\(current) → target=\(target) via \(steps) \(right ? "right" : "left") swipe(s)")
+
+        if steps == 1 {
+            postSwitchGesture(right: right)
+            return
+        }
+
+        // Multi-step. The flash between gestures is the intermediate space
+        // being rendered — something we can't suppress via CGSDisableUpdate or
+        // CGSHideSpaces (both tried, neither prevents it fully). Instead, cover
+        // the transition with a full-screen heavy blur overlay that sits on
+        // every space. The user sees a deliberate-looking blur wipe rather than
+        // a rendering glitch.
+        aslog("gestureSwitch: multi-step, showing blur overlay")
+        TransitionOverlay.show()
+
+        for _ in 0..<steps { postSwitchGesture(right: right) }
+
+        // Let the gesture events drain (and the Dock land on the target space)
+        // before we pull the overlay down.
+        let deadline = Date().addingTimeInterval(0.100)
+        RunLoop.current.run(until: deadline)
+
+        TransitionOverlay.hide()
+    }
+
+    // MARK: - Synthetic gesture posting
 
     private static let fieldEventSubType       = CGEventField(rawValue: 55)!
     private static let fieldHIDType            = CGEventField(rawValue: 110)!
@@ -19,7 +150,6 @@ enum SpaceSwitcher {
     private static let fieldScrollFlagBits     = CGEventField(rawValue: 135)!
     private static let fieldZoomDeltaX         = CGEventField(rawValue: 139)!
 
-    // Private event-type / HID constants
     private static let kCGSEventGesture:         Int64 = 29
     private static let kCGSEventDockControl:     Int64 = 30
     private static let kIOHIDEventTypeDockSwipe: Int64 = 23
@@ -27,72 +157,14 @@ enum SpaceSwitcher {
     private static let kPhaseBegan:              Int64 = 1
     private static let kPhaseEnded:              Int64 = 4
 
-    // MARK: - Public API
-
-    /// Prompts for Accessibility permission if not already granted.
-    static func ensureAccessibility() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-        AXIsProcessTrustedWithOptions(options)
-    }
-
-    /// Switch to a specific space index (1-based). No wrap-around.
-    static func switchTo(index: Int, observer: SpaceObserver) {
-        guard index != observer.currentSpaceIndex else { return }
-        guard index >= 1, index <= observer.totalSpaces else { return }
-
-        guard AXIsProcessTrusted() else {
-            NSLog("ActiveSpace: Accessibility permission not granted")
-            ensureAccessibility()
-            return
-        }
-
-        let steps = index - observer.currentSpaceIndex
-        let right = steps > 0
-
-        for _ in 0..<abs(steps) {
-            postSwitchGesture(right: right)
-        }
-
-        // After the switch, check if there's a visible app window on
-        // the new space. If not, nudge Finder to refresh the menu bar.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            if !hasVisibleAppWindow() {
-                nudgeDesktop()
-            }
-        }
-    }
-
-    /// Move to the next space, wrapping from last → first.
-    static func switchNext(observer: SpaceObserver) {
-        let total = observer.totalSpaces
-        guard total > 1 else { return }
-        let next = observer.currentSpaceIndex < total ? observer.currentSpaceIndex + 1 : 1
-        switchTo(index: next, observer: observer)
-    }
-
-    /// Move to the previous space, wrapping from first → last.
-    static func switchPrev(observer: SpaceObserver) {
-        let total = observer.totalSpaces
-        guard total > 1 else { return }
-        let prev = observer.currentSpaceIndex > 1 ? observer.currentSpaceIndex - 1 : total
-        switchTo(index: prev, observer: observer)
-    }
-
-    /// Toggle between space 1 and 2 (legacy convenience).
-    static func toggle(observer: SpaceObserver) {
-        switchNext(observer: observer)
-    }
-
-    // MARK: - Synthetic gesture posting
-
-    /// Posts a complete Begin + End dock-swipe gesture pair.
-    /// Each phase posts two events: DockControl first, then a Gesture companion.
-    static func postSwitchGesture(right: Bool) {
+    /// Posts a complete Begin + End dock-swipe gesture pair that advances the
+    /// visible cycle by one space, at high velocity so the Dock skips its
+    /// sliding animation. The Dock clamps one gesture = one space regardless
+    /// of progress magnitude, so multi-space jumps require posting N of these.
+    private static func postSwitchGesture(right: Bool) {
         let flagDir: Int64   = right ? 1 : 0
         let progress: Double = right ? 2.0 : -2.0
         let velocity: Double = right ? 400.0 : -400.0
-
-        // ── Begin phase ──
 
         guard let beginGesture = CGEvent(source: nil),
               let beginDock    = CGEvent(source: nil) else { return }
@@ -111,8 +183,6 @@ enum SpaceSwitcher {
 
         beginDock.post(tap: .cgSessionEventTap)
         beginGesture.post(tap: .cgSessionEventTap)
-
-        // ── End phase ──
 
         guard let endGesture = CGEvent(source: nil),
               let endDock    = CGEvent(source: nil) else { return }
@@ -136,30 +206,9 @@ enum SpaceSwitcher {
         endGesture.post(tap: .cgSessionEventTap)
     }
 
-    /// Returns true if there's at least one visible app window (layer 0) on screen.
-    private static func hasVisibleAppWindow() -> Bool {
-        guard let list = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
-        ) as? [[String: Any]] else { return false }
+    // MARK: - Display count
 
-        let myPID = ProcessInfo.processInfo.processIdentifier
-        for entry in list {
-            guard let pid = entry[kCGWindowOwnerPID as String] as? pid_t, pid != myPID,
-                  let layer = entry[kCGWindowLayer as String] as? Int, layer == 0,
-                  let bounds = entry[kCGWindowBounds as String] as? [String: Double],
-                  (bounds["Width"] ?? 0) >= 50, (bounds["Height"] ?? 0) >= 50 else { continue }
-            return true
-        }
-        return false
-    }
-
-    /// Activate Finder to force the Dock to refresh menu bar ownership.
-    /// Uses AppleScript — lightweight and doesn't interfere with mouse state.
-    private static func nudgeDesktop() {
-        let script = NSAppleScript(source: """
-            tell application "Finder" to activate
-        """)
-        var error: NSDictionary?
-        script?.executeAndReturnError(&error)
+    private static func isSingleDisplay() -> Bool {
+        NSScreen.screens.count <= 1
     }
 }

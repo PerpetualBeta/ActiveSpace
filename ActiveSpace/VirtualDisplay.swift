@@ -1,17 +1,76 @@
-import Foundation
+import AppKit
 import CoreGraphics
 
-/// Creates and holds a tiny invisible virtual display for the lifetime of the app.
-/// On macOS 16, single-monitor configurations use display identifier "Main" which
-/// causes the Dock's gesture processing to malfunction. A virtual display forces
-/// macOS to use UUID-based identifiers, fixing the issue.
+/// Manages an invisible virtual display that's only needed when the user has a
+/// single physical display. On macOS 16, single-monitor configurations use the
+/// display identifier "Main", which causes the Dock's gesture processing to
+/// malfunction (menu-bar PDMs and windows fail to repaint after space switches).
+/// Adding a second display — even an invisible one — forces macOS to use
+/// UUID-based identifiers instead, which fixes the gesture routing.
+///
+/// With 2+ physical displays already present, the virtual display is unnecessary
+/// and harmful — it can shadow real displays in NSScreen enumeration and show up
+/// in the plist as an "AutoCreated" display, interfering with our space-ordering
+/// logic. So we only create it when physically needed, and drop it when no
+/// longer needed (e.g. user plugs in an external monitor).
 enum VirtualDisplay {
 
-    private static var display: NSObject?
+    private static var screenObserver: NSObjectProtocol?
 
-    /// Create the virtual display. Call once at app launch.
-    static func create() {
-        guard display == nil else { return }
-        display = VirtualDisplayHelper.create()
+    /// Call once at app launch. Creates the virtual display if there's only one
+    /// physical display, and installs an observer so it's added/removed as the
+    /// user's display configuration changes.
+    static func startManaging() {
+        reconcile()
+
+        // Observe screen configuration changes (plug/unplug, lid open/close).
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            reconcile()
+        }
+    }
+
+    /// CFUUID-string identifier of the virtual display, or nil if not created.
+    static var uuidString: String? {
+        VirtualDisplayHelper.displayUUIDString()
+    }
+
+    // MARK: - Private
+
+    /// Match the virtual display's presence to whether it's currently needed.
+    private static func reconcile() {
+        let realCount = physicalDisplayCount()
+        let haveVirtual = VirtualDisplayHelper.isCreated()
+        let needVirtual = realCount <= 1
+
+        aslog("VirtualDisplay.reconcile: real=\(realCount) haveVirtual=\(haveVirtual) needVirtual=\(needVirtual)")
+
+        if needVirtual && !haveVirtual {
+            _ = VirtualDisplayHelper.create()
+        } else if !needVirtual && haveVirtual {
+            VirtualDisplayHelper.destroy()
+        }
+    }
+
+    /// Counts NSScreen.screens excluding our own virtual display if present.
+    private static func physicalDisplayCount() -> Int {
+        let virtualUUID = VirtualDisplayHelper.displayUUIDString()
+        var count = 0
+        for screen in NSScreen.screens {
+            if let virtualUUID,
+               let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+                let cgID = CGDirectDisplayID(number.uint32Value)
+                if let uuid = CGDisplayCreateUUIDFromDisplayID(cgID)?.takeRetainedValue(),
+                   let uuidStr = CFUUIDCreateString(nil, uuid) as String?,
+                   uuidStr == virtualUUID {
+                    continue   // skip our own virtual display
+                }
+            }
+            count += 1
+        }
+        return count
     }
 }
