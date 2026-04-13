@@ -2,6 +2,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <Foundation/Foundation.h>
+#import <AppKit/AppKit.h>
 #import <objc/runtime.h>
 
 extern void ActiveSpaceLogC(const char *msg);
@@ -104,24 +105,72 @@ static NSString *_virtualDisplayUUID = nil;
     id display = [[CGVirtualDisplay alloc] performSelector:NSSelectorFromString(@"initWithDescriptor:") withObject:desc];
 #pragma clang diagnostic pop
 
-    if (display) {
-        _virtualDisplay = display;
-        NSNumber *displayID = [display valueForKey:@"displayID"];
-        CGDirectDisplayID cgID = (CGDirectDisplayID)displayID.unsignedIntValue;
-        CFUUIDRef uuid = CGDisplayCreateUUIDFromDisplayID(cgID);
-        if (uuid) {
-            CFStringRef uuidStr = CFUUIDCreateString(NULL, uuid);
-            if (uuidStr) {
-                _virtualDisplayUUID = (__bridge_transfer NSString *)uuidStr;
-            }
-            CFRelease(uuid);
-        }
-        ASLog(@"Virtual display created (ID %u, UUID %@)", cgID, _virtualDisplayUUID ?: @"unknown");
-        return display;
+    if (!display) {
+        ASLog(@"Failed to create virtual display");
+        return nil;
     }
 
-    ASLog(@"Failed to create virtual display");
-    return nil;
+    _virtualDisplay = display;
+    NSNumber *displayID = [display valueForKey:@"displayID"];
+    CGDirectDisplayID cgID = (CGDirectDisplayID)displayID.unsignedIntValue;
+    CFUUIDRef uuid = CGDisplayCreateUUIDFromDisplayID(cgID);
+    if (uuid) {
+        CFStringRef uuidStr = CFUUIDCreateString(NULL, uuid);
+        if (uuidStr) {
+            _virtualDisplayUUID = (__bridge_transfer NSString *)uuidStr;
+        }
+        CFRelease(uuid);
+    }
+    ASLog(@"Virtual display created (ID %u, UUID %@)", cgID, _virtualDisplayUUID ?: @"unknown");
+
+    // Apply the mode via CGVirtualDisplaySettings.applySettings: — the real
+    // selector on macOS 26, discovered by introspection. Without this step
+    // the display object exists but is never "online" and NSScreen.screens
+    // never picks it up, so isSingleDisplay() keeps returning true and the
+    // real display's identifier remains "Main".
+    Class CGVirtualDisplaySettings = NSClassFromString(@"CGVirtualDisplaySettings");
+    if (CGVirtualDisplaySettings && mode) {
+        id settings = [[CGVirtualDisplaySettings alloc] init];
+
+        // setModes: is a proper setter method on Settings.
+        SEL setModesSel = NSSelectorFromString(@"setModes:");
+        NSMethodSignature *modesSig = [settings methodSignatureForSelector:setModesSel];
+        if (modesSig) {
+            NSInvocation *modesInv = [NSInvocation invocationWithMethodSignature:modesSig];
+            modesInv.selector = setModesSel;
+            modesInv.target = settings;
+            NSArray *modeArray = @[mode];
+            [modesInv setArgument:&modeArray atIndex:2];
+            [modesInv invoke];
+            ASLog(@"setModes: invoked with [mode]");
+        } else {
+            ASLog(@"CGVirtualDisplaySettings has no setModes: — falling back to KVC");
+            @try { [settings setValue:@[mode] forKey:@"modes"]; }
+            @catch (NSException *e) { ASLog(@"modes KVC failed: %@", e.reason); }
+        }
+
+        // applySettings: takes the settings object and returns BOOL.
+        SEL applySel = NSSelectorFromString(@"applySettings:");
+        NSMethodSignature *applySig = [display methodSignatureForSelector:applySel];
+        if (applySig) {
+            NSInvocation *applyInv = [NSInvocation invocationWithMethodSignature:applySig];
+            applyInv.selector = applySel;
+            applyInv.target = display;
+            [applyInv setArgument:&settings atIndex:2];
+            [applyInv invoke];
+            BOOL result = NO;
+            if (strcmp(applySig.methodReturnType, @encode(BOOL)) == 0) {
+                [applyInv getReturnValue:&result];
+            }
+            ASLog(@"applySettings: invoked, return=%@", result ? @"YES" : @"NO/void");
+        } else {
+            ASLog(@"display has no applySettings: selector");
+        }
+    } else {
+        ASLog(@"CGVirtualDisplaySettings class not available — mode not applied");
+    }
+
+    return display;
 }
 
 + (void)destroy {
