@@ -78,13 +78,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loadShortcuts()
         setupEventTap()
 
-        // Enable the virtual-display workaround for single-physical-display setups.
-        // Without this, single-display switches go through `directSwitch`'s
-        // CGSHideSpaces/CGSShowSpaces path, which the 2026-04-11 "When the Stars
-        // Align (Redux)" blog post documented as leaving windows bleeding across
-        // spaces. VirtualDisplay.reconcile() only creates the virtual display
-        // when physical display count is 1; with 2+ real displays it's inert,
-        // so the 2-external-clamshell case is unaffected.
         VirtualDisplay.startManaging()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

@@ -15,6 +15,31 @@ static void ASLog(NSString *fmt, ...) {
     ActiveSpaceLogC([msg UTF8String]);
 }
 
+/// Dump all instance methods and properties of a class (for private API discovery).
+static void dumpClass(Class cls, NSString *label) {
+    if (!cls) { ASLog(@"dumpClass: %@ is nil", label); return; }
+
+    ASLog(@"=== %@ instance methods ===", label);
+    unsigned int methodCount = 0;
+    Method *methods = class_copyMethodList(cls, &methodCount);
+    for (unsigned int i = 0; i < methodCount; i++) {
+        SEL sel = method_getName(methods[i]);
+        const char *types = method_getTypeEncoding(methods[i]);
+        ASLog(@"  %@ — %s", NSStringFromSelector(sel), types ?: "(no encoding)");
+    }
+    free(methods);
+
+    ASLog(@"=== %@ properties ===", label);
+    unsigned int propCount = 0;
+    objc_property_t *props = class_copyPropertyList(cls, &propCount);
+    for (unsigned int i = 0; i < propCount; i++) {
+        const char *name = property_getName(props[i]);
+        const char *attrs = property_getAttributes(props[i]);
+        ASLog(@"  %s — %s", name, attrs ?: "(no attrs)");
+    }
+    free(props);
+}
+
 @implementation VirtualDisplayHelper
 
 static id _virtualDisplay = nil;
@@ -59,6 +84,13 @@ static NSString *_virtualDisplayUUID = nil;
         ASLog(@"One or more CGVirtualDisplay classes not available");
         return nil;
     }
+
+    // Full introspection dump — looking for properties/methods that could
+    // mark this display as headless/internal to avoid coordinate corruption.
+    dumpClass(CGVirtualDisplayMode, @"CGVirtualDisplayMode");
+    dumpClass(CGVirtualDisplayDescriptor, @"CGVirtualDisplayDescriptor");
+    dumpClass(CGVirtualDisplay, @"CGVirtualDisplay");
+    dumpClass(NSClassFromString(@"CGVirtualDisplaySettings"), @"CGVirtualDisplaySettings");
 
     // Create mode: 640x480 @ 60Hz. This is large enough that macOS treats it as
     // a real display (and so forces UUID-based display identifiers, fixing the
@@ -169,6 +201,28 @@ static NSString *_virtualDisplayUUID = nil;
     } else {
         ASLog(@"CGVirtualDisplaySettings class not available — mode not applied");
     }
+
+    // Position the virtual display far to the right of the main display
+    // so the Dock doesn't migrate to it. The display must NOT be mirrored
+    // (mirrored displays count as one screen and the Dock treats them as
+    // single-display, defeating the UUID identifier mechanism).
+    CGDirectDisplayID mainDisplay = CGMainDisplayID();
+    CGRect mainBounds = CGDisplayBounds(mainDisplay);
+    int32_t offX = (int32_t)(mainBounds.origin.x + mainBounds.size.width + 6000);
+    int32_t offY = 0;
+
+    CGDisplayConfigRef config = NULL;
+    CGError err = CGBeginDisplayConfiguration(&config);
+    if (err == kCGErrorSuccess && config) {
+        CGConfigureDisplayOrigin(config, cgID, offX, offY);
+        ASLog(@"CGConfigureDisplayOrigin(virtual=%u, %d, %d)", cgID, offX, offY);
+        CGError complete = CGCompleteDisplayConfiguration(config, kCGConfigureForSession);
+        ASLog(@"CGCompleteDisplayConfiguration → %d", complete);
+    } else {
+        ASLog(@"CGBeginDisplayConfiguration failed: %d", err);
+    }
+
+    ASLog(@"Post-create NSScreen.screens.count = %lu", (unsigned long)[NSScreen screens].count);
 
     return display;
 }

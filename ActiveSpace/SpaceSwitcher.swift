@@ -90,6 +90,15 @@ enum SpaceSwitcher {
         CGSManagedDisplaySetCurrentSpace(conn,
                                          target.displayIdentifier as CFString,
                                          UInt64(target.managedSpaceID))
+
+        // SkyLight: tell WindowServer to complete the switch — this may be the
+        // missing step that prevents window bleed-through on single display.
+        let rc = SLSEnsureSpaceSwitchToActiveProcess(conn)
+        aslog("directSwitch: SLSEnsureSpaceSwitchToActiveProcess → \(rc)")
+
+        // Reset menu bar on the target space to fix any coordinate confusion.
+        let mrc = SLSSpaceResetMenuBar(conn, UInt64(target.managedSpaceID))
+        aslog("directSwitch: SLSSpaceResetMenuBar → \(mrc)")
     }
 
     // MARK: - Multi-display path (synthetic dock-swipe gesture)
@@ -115,6 +124,7 @@ enum SpaceSwitcher {
 
         if steps == 1 {
             postSwitchGesture(right: right)
+            activateTopmostWindow()
             return
         }
 
@@ -135,6 +145,31 @@ enum SpaceSwitcher {
         RunLoop.current.run(until: deadline)
 
         TransitionOverlay.hide()
+        activateTopmostWindow()
+    }
+
+    /// After a synthetic gesture switch, macOS may not activate a window in
+    /// the destination space. Find the topmost normal-layer window on screen
+    /// and activate its owning application so the menu bar updates and
+    /// focus-dependent apps (like RainbowApple) can re-query correctly.
+    private static func activateTopmostWindow() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            guard let windowList = CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+            ) as? [[String: Any]] else { return }
+
+            for window in windowList {
+                guard let layer = window[kCGWindowLayer as String] as? Int, layer == 0,
+                      let pid = window[kCGWindowOwnerPID as String] as? pid_t else { continue }
+                if let app = NSRunningApplication(processIdentifier: pid),
+                   app.activationPolicy == .regular, !app.isHidden {
+                    app.activate()
+                    aslog("activateTopmostWindow: activated \(app.localizedName ?? "?") (pid \(pid))")
+                    return
+                }
+            }
+            aslog("activateTopmostWindow: no suitable window found")
+        }
     }
 
     // MARK: - Synthetic gesture posting

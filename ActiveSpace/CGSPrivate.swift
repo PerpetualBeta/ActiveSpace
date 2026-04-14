@@ -45,3 +45,28 @@ func CGSDisableUpdate(_ conn: CGSConnectionID)
 /// Resumes WindowServer rendering after a matching CGSDisableUpdate.
 @_silgen_name("CGSReenableUpdate")
 func CGSReenableUpdate(_ conn: CGSConnectionID)
+
+// MARK: - SkyLight (SLS) private APIs — loaded via dlsym
+
+import Darwin
+
+private let skylight: UnsafeMutableRawPointer? = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
+
+typealias SLSEnsureSpaceSwitchFn = @convention(c) (CGSConnectionID) -> OSStatus
+typealias SLSSpaceResetMenuBarFn = @convention(c) (CGSConnectionID, UInt64) -> OSStatus
+typealias SLSSetWindowPrefersCurrentSpaceFn = @convention(c) (CGSConnectionID, UInt32, Bool) -> OSStatus
+
+func SLSEnsureSpaceSwitchToActiveProcess(_ conn: CGSConnectionID) -> OSStatus {
+    guard let skylight, let sym = dlsym(skylight, "SLSEnsureSpaceSwitchToActiveProcess") else { return -1 }
+    return unsafeBitCast(sym, to: SLSEnsureSpaceSwitchFn.self)(conn)
+}
+
+func SLSSpaceResetMenuBar(_ conn: CGSConnectionID, _ spaceID: UInt64) -> OSStatus {
+    guard let skylight, let sym = dlsym(skylight, "SLSSpaceResetMenuBar") else { return -1 }
+    return unsafeBitCast(sym, to: SLSSpaceResetMenuBarFn.self)(conn, spaceID)
+}
+
+func SLSSetWindowPrefersCurrentSpace(_ conn: CGSConnectionID, _ windowID: UInt32, _ prefers: Bool) -> OSStatus {
+    guard let skylight, let sym = dlsym(skylight, "SLSSetWindowPrefersCurrentSpace") else { return -1 }
+    return unsafeBitCast(sym, to: SLSSetWindowPrefersCurrentSpaceFn.self)(conn, windowID, prefers)
+}

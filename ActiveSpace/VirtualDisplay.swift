@@ -50,8 +50,29 @@ enum VirtualDisplay {
 
         if needVirtual && !haveVirtual {
             _ = VirtualDisplayHelper.create()
+            // Reset menu bars on all spaces after creating the virtual display.
+            // The extended coordinate space can corrupt menu positioning; this
+            // SkyLight API resets the menu bar rendering for each space.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                Self.resetAllMenuBars()
+            }
         } else if !needVirtual && haveVirtual {
             VirtualDisplayHelper.destroy()
+        }
+    }
+
+    /// Calls SLSSpaceResetMenuBar on every user space across all displays.
+    static func resetAllMenuBars() {
+        let conn = CGSMainConnectionID()
+        guard let displays = CGSCopyManagedDisplaySpaces(conn) as? [[String: Any]] else { return }
+        for display in displays {
+            guard let spaces = display["Spaces"] as? [[String: Any]] else { continue }
+            for space in spaces {
+                guard let type = space["type"] as? Int, type == 0,
+                      let spaceID = space["ManagedSpaceID"] as? Int else { continue }
+                let rc = SLSSpaceResetMenuBar(conn, UInt64(spaceID))
+                aslog("SLSSpaceResetMenuBar(space=\(spaceID)) → \(rc)")
+            }
         }
     }
 
