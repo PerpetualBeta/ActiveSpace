@@ -202,20 +202,28 @@ static NSString *_virtualDisplayUUID = nil;
         ASLog(@"CGVirtualDisplaySettings class not available — mode not applied");
     }
 
-    // Position the virtual display far to the right of the main display
-    // so the Dock doesn't migrate to it. The display must NOT be mirrored
-    // (mirrored displays count as one screen and the Dock treats them as
-    // single-display, defeating the UUID identifier mechanism).
+    // Position the virtual display contiguously adjacent to the right
+    // edge of the main display. Previously used a +6000 gap, which macOS
+    // silently rejects on larger display arrangements (e.g. 5K displays
+    // with 2× scaling produce a 2560-point-wide main; 8560 requested
+    // position was too far, macOS auto-snapped the virtual to the LEFT
+    // of main at mid-height, and the Dock migrated there).
+    //
+    // Contiguous-right is the position macOS naturally wants for a
+    // secondary display in a single-primary arrangement — it doesn't
+    // get repositioned, so the Dock sees no attractive landing spot.
+    // This is only invoked when there's exactly one physical display
+    // (see VirtualDisplay.reconcile), so right-of-main is always safe.
     CGDirectDisplayID mainDisplay = CGMainDisplayID();
     CGRect mainBounds = CGDisplayBounds(mainDisplay);
-    int32_t offX = (int32_t)(mainBounds.origin.x + mainBounds.size.width + 6000);
-    int32_t offY = 0;
+    int32_t offX = (int32_t)(mainBounds.origin.x + mainBounds.size.width);
+    int32_t offY = (int32_t)(mainBounds.origin.y);
 
     CGDisplayConfigRef config = NULL;
     CGError err = CGBeginDisplayConfiguration(&config);
     if (err == kCGErrorSuccess && config) {
         CGConfigureDisplayOrigin(config, cgID, offX, offY);
-        ASLog(@"CGConfigureDisplayOrigin(virtual=%u, %d, %d)", cgID, offX, offY);
+        ASLog(@"CGConfigureDisplayOrigin(virtual=%u, %d, %d) [mainBounds=%@]", cgID, offX, offY, NSStringFromRect(NSRectFromCGRect(mainBounds)));
         CGError complete = CGCompleteDisplayConfiguration(config, kCGConfigureForSession);
         ASLog(@"CGCompleteDisplayConfiguration → %d", complete);
     } else {
@@ -223,6 +231,11 @@ static NSString *_virtualDisplayUUID = nil;
     }
 
     ASLog(@"Post-create NSScreen.screens.count = %lu", (unsigned long)[NSScreen screens].count);
+
+    // Also log where the virtual display actually ended up, so we can spot
+    // future macOS auto-repositioning without digging through events.
+    CGRect virtualBounds = CGDisplayBounds(cgID);
+    ASLog(@"Post-create virtual bounds = %@", NSStringFromRect(NSRectFromCGRect(virtualBounds)));
 
     return display;
 }
