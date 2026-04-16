@@ -41,6 +41,9 @@ enum VirtualDisplay {
     // MARK: - Private
 
     /// Match the virtual display's presence to whether it's currently needed.
+    /// When the display configuration changes while a virtual display is
+    /// already active, relaunch the app so it starts clean against the new
+    /// display layout rather than trying to patch state in-place.
     private static func reconcile() {
         let realCount = physicalDisplayCount()
         let haveVirtual = VirtualDisplayHelper.isCreated()
@@ -49,15 +52,8 @@ enum VirtualDisplay {
         aslog("VirtualDisplay.reconcile: real=\(realCount) haveVirtual=\(haveVirtual) needVirtual=\(needVirtual)")
 
         if needVirtual && haveVirtual {
-            // Display config changed but we still need the virtual display.
-            // Destroy and re-create so it's repositioned relative to the
-            // current main display bounds.
-            aslog("VirtualDisplay.reconcile: re-creating for new display layout")
-            VirtualDisplayHelper.destroy()
-            _ = VirtualDisplayHelper.create()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                Self.resetAllMenuBars()
-            }
+            aslog("VirtualDisplay.reconcile: display config changed with virtual display active — relaunching")
+            relaunch()
         } else if needVirtual && !haveVirtual {
             _ = VirtualDisplayHelper.create()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -65,6 +61,18 @@ enum VirtualDisplay {
             }
         } else if !needVirtual && haveVirtual {
             VirtualDisplayHelper.destroy()
+        }
+    }
+
+    /// Relaunch the app by spawning a new instance and terminating this one.
+    private static func relaunch() {
+        guard let bundleURL = Bundle.main.bundleURL as URL? else { return }
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: config) { _, _ in
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
         }
     }
 
