@@ -244,6 +244,11 @@ enum SpaceSwitcher {
     // MARK: - Display count
 
     private static func isSingleDisplay() -> Bool {
-        NSScreen.screens.count <= 1
+        let count = NSScreen.screens.count
+        // The virtual display adds a screen that doesn't represent a
+        // physical monitor. Subtract it so we route through directSwitch
+        // (not gestureSwitch) on single-physical-display setups.
+        let physical = VirtualDisplayHelper.isCreated() ? count - 1 : count
+        return physical <= 1
     }
 }
