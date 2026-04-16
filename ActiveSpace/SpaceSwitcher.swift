@@ -99,6 +99,8 @@ enum SpaceSwitcher {
         // Reset menu bar on the target space to fix any coordinate confusion.
         let mrc = SLSSpaceResetMenuBar(conn, UInt64(target.managedSpaceID))
         aslog("directSwitch: SLSSpaceResetMenuBar → \(mrc)")
+
+        activateTopmostWindow()
     }
 
     // MARK: - Multi-display path (synthetic dock-swipe gesture)
