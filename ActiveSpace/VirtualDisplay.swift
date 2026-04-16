@@ -17,6 +17,11 @@ enum VirtualDisplay {
 
     private static var screenObserver: NSObjectProtocol?
 
+    /// The physical display count at the time we last ran reconcile.
+    /// Used to distinguish real config changes (plug/unplug) from
+    /// notifications triggered by our own virtual display creation.
+    private static var lastPhysicalCount = -1
+
     /// Call once at app launch. Creates the virtual display if there's only one
     /// physical display, and installs an observer so it's added/removed as the
     /// user's display configuration changes.
@@ -29,6 +34,12 @@ enum VirtualDisplay {
             object: nil,
             queue: .main
         ) { _ in
+            let currentPhysical = physicalDisplayCount()
+            if currentPhysical == lastPhysicalCount {
+                aslog("VirtualDisplay: config notification but physical count unchanged (\(currentPhysical)) — ignoring")
+                return
+            }
+            aslog("VirtualDisplay: physical count changed \(lastPhysicalCount) → \(currentPhysical)")
             reconcile()
         }
     }
@@ -41,7 +52,7 @@ enum VirtualDisplay {
     // MARK: - Private
 
     /// Match the virtual display's presence to whether it's currently needed.
-    /// When the display configuration changes while a virtual display is
+    /// When the physical display count changes while a virtual display is
     /// already active, relaunch the app so it starts clean against the new
     /// display layout rather than trying to patch state in-place.
     private static func reconcile() {
@@ -49,12 +60,11 @@ enum VirtualDisplay {
         let haveVirtual = VirtualDisplayHelper.isCreated()
         let needVirtual = realCount <= 1
 
+        lastPhysicalCount = realCount
+
         aslog("VirtualDisplay.reconcile: real=\(realCount) haveVirtual=\(haveVirtual) needVirtual=\(needVirtual)")
 
-        if needVirtual && haveVirtual {
-            aslog("VirtualDisplay.reconcile: display config changed with virtual display active — relaunching")
-            relaunch()
-        } else if needVirtual && !haveVirtual {
+        if needVirtual && !haveVirtual {
             _ = VirtualDisplayHelper.create()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 Self.resetAllMenuBars()
@@ -62,10 +72,16 @@ enum VirtualDisplay {
         } else if !needVirtual && haveVirtual {
             VirtualDisplayHelper.destroy()
         }
+        // needVirtual && haveVirtual: no action needed — the observer
+        // only calls reconcile when the physical count actually changed,
+        // and a real change (e.g. undock → still single display) triggers
+        // a relaunch via the observer guard above. This path is only
+        // reached from startManaging() on a fresh launch where the
+        // virtual display already exists (shouldn't happen in practice).
     }
 
     /// Relaunch the app by spawning a new instance and terminating this one.
-    private static func relaunch() {
+    static func relaunch() {
         guard let bundleURL = Bundle.main.bundleURL as URL? else { return }
         let config = NSWorkspace.OpenConfiguration()
         config.createsNewApplicationInstance = true
