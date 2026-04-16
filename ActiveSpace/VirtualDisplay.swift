@@ -48,11 +48,18 @@ enum VirtualDisplay {
 
         aslog("VirtualDisplay.reconcile: real=\(realCount) haveVirtual=\(haveVirtual) needVirtual=\(needVirtual)")
 
-        if needVirtual && !haveVirtual {
+        if needVirtual && haveVirtual {
+            // Display config changed but we still need the virtual display.
+            // Destroy and re-create so it's repositioned relative to the
+            // current main display bounds.
+            aslog("VirtualDisplay.reconcile: re-creating for new display layout")
+            VirtualDisplayHelper.destroy()
             _ = VirtualDisplayHelper.create()
-            // Reset menu bars on all spaces after creating the virtual display.
-            // The extended coordinate space can corrupt menu positioning; this
-            // SkyLight API resets the menu bar rendering for each space.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                Self.resetAllMenuBars()
+            }
+        } else if needVirtual && !haveVirtual {
+            _ = VirtualDisplayHelper.create()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 Self.resetAllMenuBars()
             }
