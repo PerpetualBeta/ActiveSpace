@@ -99,8 +99,6 @@ enum SpaceSwitcher {
         // Reset menu bar on the target space to fix any coordinate confusion.
         let mrc = SLSSpaceResetMenuBar(conn, UInt64(target.managedSpaceID))
         aslog("directSwitch: SLSSpaceResetMenuBar → \(mrc)")
-
-        activateTopmostWindow()
     }
 
     // MARK: - Multi-display path (synthetic dock-swipe gesture)
@@ -246,11 +244,6 @@ enum SpaceSwitcher {
     // MARK: - Display count
 
     private static func isSingleDisplay() -> Bool {
-        let count = NSScreen.screens.count
-        // The virtual display adds a screen that doesn't represent a
-        // physical monitor. Subtract it so we route through directSwitch
-        // (not gestureSwitch) on single-physical-display setups.
-        let physical = VirtualDisplayHelper.isCreated() ? count - 1 : count
-        return physical <= 1
+        NSScreen.screens.count <= 1
     }
 }
