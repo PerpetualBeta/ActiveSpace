@@ -246,8 +246,8 @@ private final class SwitcherContentView: NSView {
         CATransaction.commit()
 
         let item = items[index]
-        let title = item.windowTitle.isEmpty ? item.appName : item.windowTitle
-        titleLabel.stringValue = title
+        let trimmed = item.windowTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        titleLabel.stringValue = trimmed.isEmpty ? item.appName : item.windowTitle
     }
 
     // MARK: - Mouse

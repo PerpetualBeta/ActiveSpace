@@ -73,7 +73,9 @@ final class SwitcherAppResolver {
             let bundleID = app.bundleIdentifier ?? "unknown.\(pid)"
             let name = app.localizedName ?? bundleID
             let icon = app.icon ?? NSImage(size: NSSize(width: 1, height: 1))
-            let title = windowsOnSpace.first(where: { !$0.title.isEmpty })?.title ?? ""
+            let title = windowsOnSpace
+                .first(where: { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
+                .title ?? ""
             let allMinimised = windowsOnSpace.allSatisfy { $0.minimised }
             let minimisableWin = allMinimised ? windowsOnSpace.first?.ax : nil
 
@@ -113,8 +115,9 @@ final class SwitcherAppResolver {
 
     private func axTitle(_ window: AXUIElement) -> String {
         var ref: AnyObject?
-        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &ref) == .success,
-              let title = ref as? String else { return "" }
-        return title
+        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &ref) == .success else { return "" }
+        if let s = ref as? String { return s }
+        if let a = ref as? NSAttributedString { return a.string }
+        return ""
     }
 }
