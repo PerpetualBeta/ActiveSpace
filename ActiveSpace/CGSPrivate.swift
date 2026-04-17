@@ -63,6 +63,7 @@ private let skylight: UnsafeMutableRawPointer? = dlopen("/System/Library/Private
 typealias SLSEnsureSpaceSwitchFn = @convention(c) (CGSConnectionID) -> OSStatus
 typealias SLSSpaceResetMenuBarFn = @convention(c) (CGSConnectionID, UInt64) -> OSStatus
 typealias SLSSetWindowPrefersCurrentSpaceFn = @convention(c) (CGSConnectionID, UInt32, Bool) -> OSStatus
+typealias SLSCopySpacesForWindowsFn = @convention(c) (CGSConnectionID, Int32, CFArray) -> Unmanaged<CFArray>?
 
 func SLSEnsureSpaceSwitchToActiveProcess(_ conn: CGSConnectionID) -> OSStatus {
     guard let skylight, let sym = dlsym(skylight, "SLSEnsureSpaceSwitchToActiveProcess") else { return -1 }
@@ -77,4 +78,31 @@ func SLSSpaceResetMenuBar(_ conn: CGSConnectionID, _ spaceID: UInt64) -> OSStatu
 func SLSSetWindowPrefersCurrentSpace(_ conn: CGSConnectionID, _ windowID: UInt32, _ prefers: Bool) -> OSStatus {
     guard let skylight, let sym = dlsym(skylight, "SLSSetWindowPrefersCurrentSpace") else { return -1 }
     return unsafeBitCast(sym, to: SLSSetWindowPrefersCurrentSpaceFn.self)(conn, windowID, prefers)
+}
+
+/// Returns the ManagedSpaceIDs (as NSNumbers) that the given CG windows belong
+/// to, across the space types covered by `mask`. Pass mask `0x7` for all
+/// spaces (user + OS + current). Used by the switcher to determine per-window
+/// Mission Control space membership — including minimised windows and windows
+/// of hidden apps, which CGWindowListCopyWindowInfo omits.
+func SLSCopySpacesForWindows(_ conn: CGSConnectionID, _ mask: Int32, _ windows: CFArray) -> [NSNumber] {
+    guard let skylight, let sym = dlsym(skylight, "SLSCopySpacesForWindows") else { return [] }
+    let fn = unsafeBitCast(sym, to: SLSCopySpacesForWindowsFn.self)
+    guard let result = fn(conn, mask, windows) else { return [] }
+    return (result.takeRetainedValue() as? [NSNumber]) ?? []
+}
+
+/// Current user space's ManagedSpaceID. Returns 0 on fullscreen/tiled spaces
+/// (type != 0) — activations that land there go into an inert bucket.
+func currentManagedSpaceID() -> UInt64 {
+    let conn = CGSMainConnectionID()
+    guard let raw = CGSCopyManagedDisplaySpaces(conn) as? [[String: Any]] else { return 0 }
+    for display in raw {
+        guard let current = display["Current Space"] as? [String: Any],
+              let type = current["type"] as? Int, type == 0,
+              let id = current["ManagedSpaceID"] as? Int
+        else { continue }
+        return UInt64(id)
+    }
+    return 0
 }

@@ -142,7 +142,16 @@ final class SwitcherController {
         let name = (selectedIndex < candidates.count) ? candidates[selectedIndex].appName : "<none>"
         aslog("SwitcherController: commit selected=\(selectedIndex) [\(name)]")
         if selectedIndex < candidates.count {
-            candidates[selectedIndex].app.activate()
+            let entry = candidates[selectedIndex]
+            if let win = entry.minimisableWindow {
+                AXUIElementSetAttributeValue(win, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+                aslog("SwitcherController: unminimised window before activate [\(entry.appName)]")
+            }
+            if entry.appHidden {
+                entry.app.unhide()
+                aslog("SwitcherController: unhid app before activate [\(entry.appName)]")
+            }
+            entry.app.activate()
         }
         reset()
     }
@@ -161,7 +170,13 @@ final class SwitcherController {
 
     private func presentHUD() {
         let items = candidates.map {
-            SwitcherHUDWindow.Item(icon: $0.icon, appName: $0.appName, windowTitle: $0.frontWindowTitle)
+            SwitcherHUDWindow.Item(
+                icon: $0.icon,
+                appName: $0.appName,
+                windowTitle: $0.frontWindowTitle,
+                hidden: $0.appHidden,
+                minimised: $0.minimisableWindow != nil
+            )
         }
         hud.present(items: items, selectedIndex: selectedIndex)
     }

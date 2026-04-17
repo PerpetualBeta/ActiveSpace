@@ -32,7 +32,7 @@ final class SwitcherAppStack {
         if let front = NSWorkspace.shared.frontmostApplication,
            let bid = front.bundleIdentifier,
            bid != Self.ownBundleID {
-            noteActivation(bundleID: bid, onSpace: Self.currentSpaceID())
+            noteActivation(bundleID: bid, onSpace: currentManagedSpaceID())
         }
 
         NSWorkspace.shared.notificationCenter
@@ -45,7 +45,7 @@ final class SwitcherAppStack {
     /// followed by alphabetically-sorted unseen candidates. Stack entries not
     /// in `candidates` are dropped silently.
     func orderedBundleIDs(candidates: [CandidateApp]) -> [String] {
-        let spaceID = Self.currentSpaceID()
+        let spaceID = currentManagedSpaceID()
         let candidateIDs = Set(candidates.map(\.bundleID))
         let mru = (buckets[spaceID]?.entries ?? []).filter(candidateIDs.contains)
         let seen = Set(mru)
@@ -74,24 +74,8 @@ final class SwitcherAppStack {
               let bundleID = app.bundleIdentifier,
               bundleID != Self.ownBundleID
         else { return }
-        let spaceID = Self.currentSpaceID()
+        let spaceID = currentManagedSpaceID()
         noteActivation(bundleID: bundleID, onSpace: spaceID)
         aslog("SwitcherAppStack: activation bundleID=\(bundleID) space=\(spaceID)")
-    }
-
-    /// Reads the current user space's ManagedSpaceID via CGS. Returns 0 on
-    /// fullscreen/tiled spaces (type != 0) — those activations land in an
-    /// inert bucket and are never queried.
-    private static func currentSpaceID() -> UInt64 {
-        let conn = CGSMainConnectionID()
-        guard let raw = CGSCopyManagedDisplaySpaces(conn) as? [[String: Any]] else { return 0 }
-        for display in raw {
-            guard let current = display["Current Space"] as? [String: Any],
-                  let type = current["type"] as? Int, type == 0,
-                  let id = current["ManagedSpaceID"] as? Int
-            else { continue }
-            return UInt64(id)
-        }
-        return 0
     }
 }

@@ -10,6 +10,8 @@ final class SwitcherHUDWindow: NSPanel {
         let icon: NSImage
         let appName: String
         let windowTitle: String
+        let hidden: Bool
+        let minimised: Bool
     }
 
     var onHover: ((Int) -> Void)?
@@ -104,6 +106,7 @@ private final class SwitcherContentView: NSView {
 
     private var items: [SwitcherHUDWindow.Item] = []
     private var iconViews: [NSImageView] = []
+    private var badgeViews: [NSView?] = []
     private var trackingAreas_: [NSTrackingArea] = []
     private let ring = CALayer()
     private let titleLabel = NSTextField(labelWithString: "")
@@ -139,6 +142,7 @@ private final class SwitcherContentView: NSView {
         self.selectedIndex = selectedIndex
 
         iconViews.forEach { $0.removeFromSuperview() }
+        badgeViews.compactMap { $0 }.forEach { $0.removeFromSuperview() }
         iconViews = newItems.map { item in
             let iv = NSImageView(image: item.icon)
             iv.imageScaling = .scaleProportionallyUpOrDown
@@ -146,10 +150,37 @@ private final class SwitcherContentView: NSView {
             addSubview(iv)
             return iv
         }
+        badgeViews = newItems.map { item in
+            // Hidden wins over minimised when both — the user's action was "hide", not "minimise".
+            if item.hidden { return Self.makeBadge(symbol: "eye.slash.fill", superview: self) }
+            if item.minimised { return Self.makeBadge(symbol: "arrow.down", superview: self) }
+            return nil
+        }
 
         cachedFittingSize = computeFittingSize()
         invalidateIntrinsicContentSize()
         needsLayout = true
+    }
+
+    private static func makeBadge(symbol: String, superview: NSView) -> NSView {
+        let size: CGFloat = 26
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.42).cgColor
+        container.layer?.cornerRadius = size / 2
+        container.layer?.borderColor = NSColor.white.withAlphaComponent(0.55).cgColor
+        container.layer?.borderWidth = 1.5
+
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+        let img = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        let iv = NSImageView(image: img ?? NSImage())
+        iv.contentTintColor = NSColor.white.withAlphaComponent(0.82)
+        iv.imageScaling = .scaleProportionallyUpOrDown
+        iv.frame = NSRect(x: 0, y: 0, width: size, height: size)
+        container.addSubview(iv)
+        superview.addSubview(container)
+        return container
     }
 
     override func layout() {
@@ -183,10 +214,19 @@ private final class SwitcherContentView: NSView {
         let rowWidth = CGFloat(count) * Self.iconSize + CGFloat(max(0, count - 1)) * Self.iconGap
         let startX = (bounds.width - rowWidth) / 2
         let iconY = Self.outerPadding + Self.titleHeight + Self.titleGap
+        let badgeSize: CGFloat = 26
 
         for (i, iv) in iconViews.enumerated() {
             let x = startX + CGFloat(i) * (Self.iconSize + Self.iconGap)
             iv.frame = NSRect(x: x, y: iconY, width: Self.iconSize, height: Self.iconSize)
+            if let badge = badgeViews[i] {
+                badge.frame = NSRect(
+                    x: x + Self.iconSize - badgeSize + 4,
+                    y: iconY - 4,
+                    width: badgeSize,
+                    height: badgeSize
+                )
+            }
         }
     }
 

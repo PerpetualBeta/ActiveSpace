@@ -1,10 +1,23 @@
 import AppKit
 import ApplicationServices
 
-/// Enumerates regular apps with at least one visible window on the current
-/// Mission Control space. Lifted from SpaceMan's WindowCapture pattern:
-/// CG on-screen list scopes to the current space; AX walk per-app surfaces
-/// the windows; `_AXUIElementGetWindow` cross-references the two.
+/// Enumerates regular apps with at least one window on the current Mission
+/// Control space — including **minimised windows** and **hidden-app windows**.
+///
+/// v2 (2026-04-17): uses `SLSCopySpacesForWindows` (SkyLight private API) for
+/// strict per-window space membership. Supersedes the v1 CG-on-screen filter
+/// which silently dropped minimised windows and hidden apps.
+///
+/// Algorithm per app:
+///   1. AX-walk its windows (all spaces, all states).
+///   2. Resolve each AXUIElement to a CG window ID via `_AXUIElementGetWindow`.
+///   3. Phase 1 — batch SLS call with the app's full window set; union check
+///      against `currentSpaceID` to cull apps with nothing on this space.
+///   4. Phase 2 — per-window SLS call to filter to just the windows on this
+///      space; capture minimised state + AX title for each.
+///   5. If any windows remain, emit an Entry. `minimisableWindow` is set iff
+///      *every* window on this space is minimised — commit will then
+///      unminimise one before activating so the app actually surfaces.
 final class SwitcherAppResolver {
 
     struct Entry {
@@ -13,39 +26,66 @@ final class SwitcherAppResolver {
         let appName: String
         let icon: NSImage
         let frontWindowTitle: String
+        /// Non-nil iff every window this app has on the current space is
+        /// minimised. Controller unminimises this one before activating.
+        let minimisableWindow: AXUIElement?
+        /// App-level `NSRunningApplication.isHidden` at enumeration time.
+        let appHidden: Bool
     }
 
     func currentSpaceApps(orderedBy stack: SwitcherAppStack) -> [Entry] {
         guard AXIsProcessTrusted() else { return [] }
-
-        let listOpts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        let cgList = (CGWindowListCopyWindowInfo(listOpts, kCGNullWindowID) as? [[String: Any]]) ?? []
-
-        var onScreenIDs = Set<CGWindowID>()
-        var cgTitleByID: [CGWindowID: String] = [:]
-        for entry in cgList {
-            guard let layer = entry[kCGWindowLayer as String] as? Int, layer == 0 else { continue }
-            guard let id = entry[kCGWindowNumber as String] as? CGWindowID else { continue }
-            onScreenIDs.insert(id)
-            if let title = entry[kCGWindowName as String] as? String, !title.isEmpty {
-                cgTitleByID[id] = title
-            }
-        }
+        let currentSpace = currentManagedSpaceID()
+        guard currentSpace != 0 else { return [] }
+        let conn = CGSMainConnectionID()
 
         var entries: [Entry] = []
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
             let pid = app.processIdentifier
             let axWindows = axWindowList(for: pid)
-            let onSpace = axWindows.filter { isOnCurrentSpace($0, onScreenIDs: onScreenIDs) }
-            guard !onSpace.isEmpty else { continue }
+            guard !axWindows.isEmpty else { continue }
+
+            var axToCG: [(ax: AXUIElement, cg: CGWindowID)] = []
+            for ax in axWindows {
+                var cg: CGWindowID = 0
+                if _AXUIElementGetWindow(ax, &cg) == .success {
+                    axToCG.append((ax, cg))
+                }
+            }
+            guard !axToCG.isEmpty else { continue }
+
+            // Phase 1 — cheap union check against app's full window set.
+            let unionArray = axToCG.map { NSNumber(value: $0.cg) } as CFArray
+            let unionSpaces = Set(SLSCopySpacesForWindows(conn, 0x7, unionArray)
+                                    .map { $0.uint64Value })
+            guard unionSpaces.contains(currentSpace) else { continue }
+
+            // Phase 2 — per-window SLS to isolate windows actually on this space.
+            var windowsOnSpace: [(ax: AXUIElement, minimised: Bool, title: String)] = []
+            for pair in axToCG {
+                let single = [NSNumber(value: pair.cg)] as CFArray
+                let spaces = SLSCopySpacesForWindows(conn, 0x7, single)
+                guard spaces.contains(where: { $0.uint64Value == currentSpace }) else { continue }
+                windowsOnSpace.append((pair.ax, axIsMinimised(pair.ax), axTitle(pair.ax)))
+            }
+            guard !windowsOnSpace.isEmpty else { continue }
 
             let bundleID = app.bundleIdentifier ?? "unknown.\(pid)"
             let name = app.localizedName ?? bundleID
             let icon = app.icon ?? NSImage(size: NSSize(width: 1, height: 1))
-            let title = frontWindowTitle(onSpace: onSpace, cgTitleByID: cgTitleByID)
+            let title = windowsOnSpace.first(where: { !$0.title.isEmpty })?.title ?? ""
+            let allMinimised = windowsOnSpace.allSatisfy { $0.minimised }
+            let minimisableWin = allMinimised ? windowsOnSpace.first?.ax : nil
 
-            entries.append(Entry(app: app, bundleID: bundleID, appName: name,
-                                 icon: icon, frontWindowTitle: title))
+            entries.append(Entry(
+                app: app,
+                bundleID: bundleID,
+                appName: name,
+                icon: icon,
+                frontWindowTitle: title,
+                minimisableWindow: minimisableWin,
+                appHidden: app.isHidden
+            ))
         }
 
         let candidates = entries.map { CandidateApp(bundleID: $0.bundleID, localizedName: $0.appName) }
@@ -54,7 +94,7 @@ final class SwitcherAppResolver {
         return orderedIDs.compactMap { byID[$0] }
     }
 
-    // MARK: - Helpers
+    // MARK: - AX helpers
 
     private func axWindowList(for pid: pid_t) -> [AXUIElement] {
         let appEl = AXUIElementCreateApplication(pid)
@@ -64,26 +104,17 @@ final class SwitcherAppResolver {
         return arr
     }
 
-    private func isOnCurrentSpace(_ element: AXUIElement, onScreenIDs: Set<CGWindowID>) -> Bool {
-        var windowID: CGWindowID = 0
-        guard _AXUIElementGetWindow(element, &windowID) == .success else { return false }
-        return onScreenIDs.contains(windowID)
+    private func axIsMinimised(_ window: AXUIElement) -> Bool {
+        var ref: AnyObject?
+        guard AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &ref) == .success,
+              let flag = ref as? Bool else { return false }
+        return flag
     }
 
-    private func frontWindowTitle(onSpace axWindows: [AXUIElement],
-                                  cgTitleByID: [CGWindowID: String]) -> String {
-        for win in axWindows {
-            var ref: AnyObject?
-            if AXUIElementCopyAttributeValue(win, kAXTitleAttribute as CFString, &ref) == .success,
-               let title = ref as? String, !title.isEmpty {
-                return title
-            }
-            var windowID: CGWindowID = 0
-            if _AXUIElementGetWindow(win, &windowID) == .success,
-               let title = cgTitleByID[windowID], !title.isEmpty {
-                return title
-            }
-        }
-        return ""
+    private func axTitle(_ window: AXUIElement) -> String {
+        var ref: AnyObject?
+        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &ref) == .success,
+              let title = ref as? String else { return "" }
+        return title
     }
 }
