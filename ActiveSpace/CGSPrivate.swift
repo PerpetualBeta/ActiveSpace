@@ -1,9 +1,17 @@
 import Foundation
+import ApplicationServices
 
 // Private CoreGraphics Spaces APIs (SPI — not in public headers).
 // These are stable on macOS 13+ and used by WhichSpace, Spaceman, etc.
 
 typealias CGSConnectionID = UInt32
+
+/// Resolves an AXUIElement window reference to its CG window ID. Used to
+/// cross-reference AX windows (which enumerate across all spaces) against
+/// the CG on-screen list (current-space only).
+@_silgen_name("_AXUIElementGetWindow")
+func _AXUIElementGetWindow(_ element: AXUIElement,
+                           _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
 
 @_silgen_name("CGSMainConnectionID")
 func CGSMainConnectionID() -> CGSConnectionID

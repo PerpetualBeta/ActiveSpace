@@ -9,6 +9,7 @@ private var _nextKeyCode: UInt16 = 0
 private var _nextModifiers: CGEventFlags = []
 private var _prevKeyCode: UInt16 = 0
 private var _prevModifiers: CGEventFlags = []
+private var _switcherEnabled: Bool = false
 
 /// Action dispatched from the tap callback back to the main thread.
 private enum HotkeyAction { case next, prev }
@@ -26,24 +27,47 @@ private func hotkeyTapCallback(
     // Re-enable tap if the system disabled it (timeout / user-input flood)
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         if let tap = _eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
+        if _switcherEnabled { SwitcherController.shared.handleTapReEnabled() }
         return Unmanaged.passUnretained(event)
     }
 
-    guard type == .keyDown else { return Unmanaged.passUnretained(event) }
-
     let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-    let flags = event.flags.intersection(_modifierMask)
+    let fullFlags = event.flags
+    let modFlags = fullFlags.intersection(_modifierMask)
 
-    if _nextKeyCode != 0 && keyCode == _nextKeyCode && flags == _nextModifiers {
-        DispatchQueue.main.async { _hotkeyAction = .next; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
-        return nil  // consume the event
-    }
-    if _prevKeyCode != 0 && keyCode == _prevKeyCode && flags == _prevModifiers {
-        DispatchQueue.main.async { _hotkeyAction = .prev; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
-        return nil
-    }
+    switch type {
+    case .keyDown:
+        if _nextKeyCode != 0 && keyCode == _nextKeyCode && modFlags == _nextModifiers {
+            DispatchQueue.main.async { _hotkeyAction = .next; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
+            return nil
+        }
+        if _prevKeyCode != 0 && keyCode == _prevKeyCode && modFlags == _prevModifiers {
+            DispatchQueue.main.async { _hotkeyAction = .prev; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
+            return nil
+        }
+        if _switcherEnabled,
+           SwitcherController.shared.handleKeyDown(keyCode: keyCode, flags: fullFlags) {
+            return nil
+        }
+        return Unmanaged.passUnretained(event)
 
-    return Unmanaged.passUnretained(event)
+    case .keyUp:
+        if _switcherEnabled,
+           SwitcherController.shared.handleKeyUp(keyCode: keyCode, flags: fullFlags) {
+            return nil
+        }
+        return Unmanaged.passUnretained(event)
+
+    case .flagsChanged:
+        if _switcherEnabled,
+           SwitcherController.shared.handleFlagsChanged(flags: fullFlags) {
+            return nil
+        }
+        return Unmanaged.passUnretained(event)
+
+    default:
+        return Unmanaged.passUnretained(event)
+    }
 }
 
 extension Notification.Name {
@@ -65,6 +89,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var nextModifiers: NSEvent.ModifierFlags = [] { didSet { _nextModifiers = nextModifiers.cgEventFlags } }
     var prevKeyCode: UInt16 = 0   { didSet { _prevKeyCode = prevKeyCode } }
     var prevModifiers: NSEvent.ModifierFlags = [] { didSet { _prevModifiers = prevModifiers.cgEventFlags } }
+
+    var switcherEnabled: Bool = false {
+        didSet {
+            _switcherEnabled = switcherEnabled
+            SwitcherController.shared.setEnabled(switcherEnabled)
+            if switcherEnabled && !oldValue {
+                // AX is required by the forthcoming resolver; existing prompt is the feedback.
+                SpaceSwitcher.ensureAccessibility()
+            }
+        }
+    }
 
     /// Exposes the tap so JorvikShortcutRecorder can disable it during recording.
     var currentEventTap: CFMachPort? { _eventTap }
@@ -113,7 +148,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupEventTap() {
         guard _eventTap == nil else { return }
 
-        let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
+        let mask: CGEventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.keyUp.rawValue) |
+            (1 << CGEventType.flagsChanged.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -177,6 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             prevKeyCode = UInt16(pk)
             prevModifiers = NSEvent.ModifierFlags(rawValue: UInt(pm))
         }
+        switcherEnabled = d.bool(forKey: "switcherEnabled")
     }
 
     func saveShortcuts() {
@@ -185,6 +224,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         d.set(Int(nextModifiers.rawValue), forKey: "nextSpaceModifiers")
         d.set(Int(prevKeyCode), forKey: "prevSpaceKeyCode")
         d.set(Int(prevModifiers.rawValue), forKey: "prevSpaceModifiers")
+    }
+
+    func saveSwitcherEnabled() {
+        UserDefaults.standard.set(switcherEnabled, forKey: "switcherEnabled")
     }
 
     func nextShortcutDisplayString() -> String {
@@ -283,6 +326,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] in
             guard let delegate = self else { return EmptyView().eraseToAnyView() }
             return Group {
+                Section("Switcher") {
+                    Toggle("Space-aware Command-Tab", isOn: Binding(
+                        get: { delegate.switcherEnabled },
+                        set: { delegate.switcherEnabled = $0; delegate.saveSwitcherEnabled() }
+                    ))
+                    Text("Replaces native Command-Tab with a switcher that only shows apps with windows on the current space. Requires Accessibility (see Permissions below).")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Keyboard Shortcuts") {
                     JorvikShortcutRecorder(
                         label: "Previous Space",

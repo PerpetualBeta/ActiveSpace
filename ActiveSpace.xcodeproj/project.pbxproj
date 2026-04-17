@@ -28,6 +28,10 @@
 		AA000068 /* VirtualDisplayHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = AA000078 /* VirtualDisplayHelper.m */; };
 		AA000069 /* Logging.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000082 /* Logging.swift */; };
 		AA00006A /* TransitionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000083 /* TransitionOverlay.swift */; };
+		AA000091 /* SwitcherController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000090 /* SwitcherController.swift */; };
+		AA000093 /* SwitcherAppResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000092 /* SwitcherAppResolver.swift */; };
+		AA000095 /* SwitcherHUDWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000094 /* SwitcherHUDWindow.swift */; };
+		AA000097 /* SwitcherAppStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000096 /* SwitcherAppStack.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -57,6 +61,10 @@
 		AA000081 /* ActiveSpace-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ActiveSpace-Bridging-Header.h"; sourceTree = "<group>"; };
 		AA000082 /* Logging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging.swift; sourceTree = "<group>"; };
 		AA000083 /* TransitionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransitionOverlay.swift; sourceTree = "<group>"; };
+		AA000090 /* SwitcherController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherController.swift; sourceTree = "<group>"; };
+		AA000092 /* SwitcherAppResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherAppResolver.swift; sourceTree = "<group>"; };
+		AA000094 /* SwitcherHUDWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherHUDWindow.swift; sourceTree = "<group>"; };
+		AA000096 /* SwitcherAppStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherAppStack.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +107,10 @@
 				AA000081 /* ActiveSpace-Bridging-Header.h */,
 				AA000082 /* Logging.swift */,
 				AA000083 /* TransitionOverlay.swift */,
+				AA000090 /* SwitcherController.swift */,
+				AA000092 /* SwitcherAppResolver.swift */,
+				AA000094 /* SwitcherHUDWindow.swift */,
+				AA000096 /* SwitcherAppStack.swift */,
 				AA000080 /* JorvikKit */,
 			);
 			path = ActiveSpace;
@@ -215,6 +227,10 @@
 				AA000068 /* VirtualDisplayHelper.m in Sources */,
 				AA000069 /* Logging.swift in Sources */,
 				AA00006A /* TransitionOverlay.swift in Sources */,
+				AA000091 /* SwitcherController.swift in Sources */,
+				AA000093 /* SwitcherAppResolver.swift in Sources */,
+				AA000095 /* SwitcherHUDWindow.swift in Sources */,
+				AA000097 /* SwitcherAppStack.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
