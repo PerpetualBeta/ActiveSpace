@@ -16,6 +16,10 @@ import CoreGraphics
 enum VirtualDisplay {
 
     private static var screenObserver: NSObjectProtocol?
+    private static var lastEnforceAttempt: Date?
+    private static var enforceAttemptCount = 0
+    private static let maxEnforceAttempts = 5
+    private static let enforceMinInterval: TimeInterval = 0.5
 
     /// Call once at app launch. Creates the virtual display if there's only one
     /// physical display, and installs an observer so it's added/removed as the
@@ -64,6 +68,7 @@ enum VirtualDisplay {
 
         if needVirtual && !haveVirtual {
             _ = VirtualDisplayHelper.create()
+            enforceAttemptCount = 0   // fresh creation — reset drift counter
             // Reset menu bars on all spaces after creating the virtual display.
             // The extended coordinate space can corrupt menu positioning; this
             // SkyLight API resets the menu bar rendering for each space.
@@ -72,6 +77,70 @@ enum VirtualDisplay {
             }
         } else if !needVirtual && haveVirtual {
             VirtualDisplayHelper.destroy()
+        }
+
+        // Whenever screen params change, macOS may silently reposition the
+        // virtual from our requested right-of-main origin to left-of-main —
+        // which drags the Dock off-screen onto the (invisible-but-routable)
+        // virtual. Re-apply the intended position if we see it has drifted.
+        enforceVirtualPosition()
+    }
+
+    /// If the virtual exists but macOS has moved it away from our intended
+    /// right-of-main origin, call CGConfigureDisplayOrigin again. Rate-limited
+    /// to one attempt every 500ms and capped at 5 attempts per creation to
+    /// avoid fighting macOS in a loop if the reposition can't be made to stick.
+    private static func enforceVirtualPosition() {
+        guard VirtualDisplayHelper.isCreated(),
+              let virtualUUID = VirtualDisplayHelper.displayUUIDString() else { return }
+
+        // Find the virtual display's current CGDirectDisplayID via its UUID
+        // (the ID itself churns across recreation; UUID is stable).
+        var virtualID: CGDirectDisplayID?
+        for screen in NSScreen.screens {
+            guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { continue }
+            let cgID = CGDirectDisplayID(n.uint32Value)
+            if let uuid = CGDisplayCreateUUIDFromDisplayID(cgID)?.takeRetainedValue(),
+               let uuidStr = CFUUIDCreateString(nil, uuid) as String?,
+               uuidStr == virtualUUID {
+                virtualID = cgID
+                break
+            }
+        }
+        guard let virtualID else { return }
+
+        let mainBounds = CGDisplayBounds(CGMainDisplayID())
+        let expectedX = Int32(mainBounds.origin.x + mainBounds.size.width)
+        let expectedY = Int32(mainBounds.origin.y)
+        let current = CGDisplayBounds(virtualID)
+
+        if Int32(current.origin.x) == expectedX && Int32(current.origin.y) == expectedY {
+            return
+        }
+
+        // Rate-limit so a re-apply that macOS immediately overrides doesn't
+        // spin in a notification loop.
+        if let last = lastEnforceAttempt, Date().timeIntervalSince(last) < enforceMinInterval {
+            aslog("enforceVirtualPosition: rate-limit skip (last attempt \(Int(Date().timeIntervalSince(last) * 1000))ms ago)")
+            return
+        }
+        if enforceAttemptCount >= maxEnforceAttempts {
+            aslog("enforceVirtualPosition: giving up after \(maxEnforceAttempts) attempts — virtual at (\(Int(current.origin.x)),\(Int(current.origin.y)))")
+            return
+        }
+
+        enforceAttemptCount += 1
+        lastEnforceAttempt = Date()
+        aslog("enforceVirtualPosition: drifted to (\(Int(current.origin.x)),\(Int(current.origin.y))) — re-applying (\(expectedX),\(expectedY)) [attempt \(enforceAttemptCount)/\(maxEnforceAttempts)]")
+
+        var config: CGDisplayConfigRef?
+        let begin = CGBeginDisplayConfiguration(&config)
+        if begin == .success, let config {
+            CGConfigureDisplayOrigin(config, virtualID, expectedX, expectedY)
+            let complete = CGCompleteDisplayConfiguration(config, .forSession)
+            aslog("enforceVirtualPosition: CGCompleteDisplayConfiguration → \(complete.rawValue)")
+        } else {
+            aslog("enforceVirtualPosition: CGBeginDisplayConfiguration failed: \(begin.rawValue)")
         }
     }
 
