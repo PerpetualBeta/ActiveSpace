@@ -38,6 +38,20 @@ enum VirtualDisplay {
         VirtualDisplayHelper.displayUUIDString()
     }
 
+    /// Remove the screen observer and destroy the virtual display if present.
+    /// Called from `applicationWillTerminate` so a self-restart under launchd
+    /// doesn't inherit a lingering virtual display that would confuse the
+    /// respawned instance's initial fingerprint.
+    static func teardown() {
+        if let observer = screenObserver {
+            NotificationCenter.default.removeObserver(observer)
+            screenObserver = nil
+        }
+        if VirtualDisplayHelper.isCreated() {
+            VirtualDisplayHelper.destroy()
+        }
+    }
+
     // MARK: - Private
 
     /// Match the virtual display's presence to whether it's currently needed.

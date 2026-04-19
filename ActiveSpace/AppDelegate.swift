@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import ServiceManagement
 
 // MARK: - Module-level hotkey state (required for C-compatible CGEvent tap callback)
 
@@ -78,6 +79,17 @@ extension Notification.Name {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
+    // MARK: - Keep-alive agent
+
+    private static let agentPlistName = "cc.jorviksoftware.ActiveSpace.agent.plist"
+    private static let agentLabel     = "cc.jorviksoftware.ActiveSpace.agent"
+    private var agentService: SMAppService { SMAppService.agent(plistName: Self.agentPlistName) }
+
+    // MARK: - Drift-mitigation observer + restart
+
+    private var reconfigurationObserver: ReconfigurationObserver?
+    private var restartCoordinator: RestartCoordinator?
+
     private var statusItem: NSStatusItem!
     private let observer = SpaceObserver()
     private var popover: NSPopover?
@@ -109,11 +121,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         aslog("applicationDidFinishLaunching: NSScreen.screens.count=\(NSScreen.screens.count)")
         NSApp.setActivationPolicy(.accessory)
+
+        // Register the keep-alive agent on first launch so the app survives
+        // crashes and respawns after self-restart on drift events. If this
+        // process wasn't started by launchd (user double-clicked the .app),
+        // hand off so KeepAlive actually applies — launchd only monitors
+        // processes it started itself.
+        registerKeepAliveAgentIfNeeded()
+        if shouldHandOffToLaunchd() {
+            handOffToLaunchdAndExit()
+            return
+        }
+
         SpaceSwitcher.ensureAccessibility()
         loadShortcuts()
         setupEventTap()
 
         VirtualDisplay.startManaging()
+
+        // Drift detection → self-restart. Observer captures the initial
+        // fingerprint in its init; coordinator evaluates absolute triggers
+        // against it on start() before any event fires.
+        let reconfObserver = ReconfigurationObserver { [weak self] event in
+            self?.restartCoordinator?.handle(event: event)
+        }
+        let coordinator = RestartCoordinator(observer: reconfObserver)
+        self.reconfigurationObserver = reconfObserver
+        self.restartCoordinator = coordinator
+        coordinator.start()
+        reconfObserver.start()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -139,6 +175,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.handleHotkey() }
             .store(in: &cancellables)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Tear down the virtual display before exit so a self-restart under
+        // launchd doesn't inherit a lingering 640×480 that would poison the
+        // respawned instance's initial fingerprint.
+        VirtualDisplay.teardown()
+    }
+
+    // MARK: - Keep-alive agent
+
+    private func registerKeepAliveAgentIfNeeded() {
+        guard agentService.status == .notRegistered else { return }
+        do {
+            try agentService.register()
+            ActiveSpaceLogger.log("Registered keep-alive agent (\(Self.agentPlistName))")
+        } catch {
+            NSLog("ActiveSpace: agent register failed: \(error)")
+        }
+    }
+
+    /// True when the agent is enabled AND this process was NOT started by
+    /// launchd. launchd injects `XPC_SERVICE_NAME` into the environment of
+    /// jobs it starts — absence of that variable is the reliable signal
+    /// that we're a user-launched instance.
+    private func shouldHandOffToLaunchd() -> Bool {
+        guard agentService.status == .enabled else { return false }
+        let xpcService = ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"]
+        return xpcService != Self.agentLabel
+    }
+
+    /// Ask launchd to kickstart the agent and exit cleanly. The kickstarted
+    /// instance comes up with `XPC_SERVICE_NAME` set and runs normally.
+    /// `terminate(nil)` exits with code 0, which KeepAlive's
+    /// `SuccessfulExit=false` rule correctly ignores.
+    private func handOffToLaunchdAndExit() {
+        ActiveSpaceLogger.log("User-launched instance detected; kickstarting launchd-owned instance")
+        let task = Process()
+        task.launchPath = "/bin/launchctl"
+        task.arguments = ["kickstart", "gui/\(getuid())/\(Self.agentLabel)"]
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            NSLog("ActiveSpace: kickstart failed: \(error)")
+        }
+        NSApp.terminate(nil)
     }
 
     // MARK: - Event tap
