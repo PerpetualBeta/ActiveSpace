@@ -7,6 +7,7 @@ enum ReconfigurationSource: String {
     case didWake                   = "NSWorkspace.didWakeNotification"
     case cgDisplayReconfig         = "CGDisplayRegisterReconfigurationCallback"
     case activeSpaceDidChange      = "NSWorkspace.activeSpaceDidChangeNotification"
+    case screenLockChanged         = "com.apple.screenIs{Locked,Unlocked}"
     case poll                      = "Poll (5s)"
 }
 
@@ -21,10 +22,13 @@ struct ReconfigurationEvent {
     var changed: Bool { before != after }
 }
 
-/// Subscribes to five drift-detection mechanisms and forwards coalesced events
+/// Subscribes to six drift-detection mechanisms and forwards coalesced events
 /// to `onEvent`. Bursts within 200ms are merged into one ReconfigurationEvent
 /// whose `sources` array lists every mechanism that fired. Ported from
-/// DisplayProbe.EventDetector with the 5th source (activeSpaceDidChange) added.
+/// DisplayProbe.EventDetector with activeSpaceDidChange and the
+/// com.apple.screenIs{Locked,Unlocked} distributed notifications added —
+/// the latter to catch screensaver wakes (which don't fire didWake because
+/// the system didn't actually sleep).
 @MainActor
 final class ReconfigurationObserver {
 
@@ -63,6 +67,26 @@ final class ReconfigurationObserver {
             object: nil
         )
 
+        // Screen lock/unlock comes via the distributed notification centre,
+        // not the regular NotificationCenter. These fire for screensaver
+        // cycles (where NSWorkspace.didWakeNotification does NOT, because
+        // the system didn't actually sleep) and are the reliable signal for
+        // "user has just come back to the machine" — exactly when a
+        // post-wake space reorder would be observable.
+        let distributed = DistributedNotificationCenter.default()
+        distributed.addObserver(
+            self,
+            selector: #selector(screenLockChanged),
+            name: NSNotification.Name("com.apple.screenIsLocked"),
+            object: nil
+        )
+        distributed.addObserver(
+            self,
+            selector: #selector(screenLockChanged),
+            name: NSNotification.Name("com.apple.screenIsUnlocked"),
+            object: nil
+        )
+
         installCGCallback()
         startPollTimer()
 
@@ -79,6 +103,7 @@ final class ReconfigurationObserver {
     @objc private func screenParamsChanged() { record(.didChangeScreenParameters) }
     @objc private func didWake()             { record(.didWake) }
     @objc private func activeSpaceChanged()  { record(.activeSpaceDidChange) }
+    @objc private func screenLockChanged()   { record(.screenLockChanged) }
 
     // MARK: - CG low-level callback
 
