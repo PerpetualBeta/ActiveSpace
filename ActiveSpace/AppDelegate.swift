@@ -151,6 +151,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         monitor.start()
         reconfObserver.start()
 
+        // Pre-warm + pre-render icons for every currently-running regular app
+        // so the first Switcher HUD draw after launch doesn't pay icon-service
+        // and scale-down rendering costs on the main thread. Observe app
+        // launches to keep the cache warm as new apps come online.
+        AppIconCache.warmRunningApps()
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.activationPolicy == .regular else { return }
+            AppIconCache.warm(for: app)
+        }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         guard let button = statusItem.button else { return }

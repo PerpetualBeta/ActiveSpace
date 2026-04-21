@@ -1,6 +1,64 @@
 import AppKit
 import ApplicationServices
 
+/// Pre-warmed, pre-rendered icons keyed by bundle ID. `NSRunningApplication.icon`
+/// lazily resolves via icon services on first access, and `NSImageView`
+/// does the scale-down-to-96pt render on first display — both on the main
+/// thread during HUD assembly, which is why the first HUD after launching
+/// a new app used to feel sluggish. This cache pays that cost once, up
+/// front, so every HUD draw serves from memory.
+///
+/// Main-thread only by convention — every call site (HUD assembly,
+/// launch-notification observers in AppDelegate, startup warmup) runs on
+/// the main thread. Not marked @MainActor to avoid forcing concurrency
+/// annotations to cascade through the Switcher stack.
+enum AppIconCache {
+    /// Matches SwitcherHUDWindow.iconSize — the size we're going to display
+    /// at. Pre-rendering at display size is the key to dodging first-draw lag.
+    private static let targetSize = NSSize(width: 96, height: 96)
+
+    private static var cache: [String: NSImage] = [:]
+
+    /// Serve the cached icon for an app, filling the cache on miss.
+    static func icon(for app: NSRunningApplication) -> NSImage {
+        let key = app.bundleIdentifier ?? "pid:\(app.processIdentifier)"
+        if let cached = cache[key] { return cached }
+        let source = app.icon ?? NSImage(size: targetSize)
+        let warmed = prerender(source)
+        cache[key] = warmed
+        return warmed
+    }
+
+    /// Force a lazy NSImage to decode + scale to our target size by drawing
+    /// it once into a fresh bitmap-backed image. Subsequent draws from the
+    /// returned image are cheap.
+    private static func prerender(_ img: NSImage) -> NSImage {
+        let out = NSImage(size: targetSize)
+        out.lockFocus()
+        img.draw(in: NSRect(origin: .zero, size: targetSize),
+                 from: .zero,
+                 operation: .sourceOver,
+                 fraction: 1.0)
+        out.unlockFocus()
+        return out
+    }
+
+    /// Warm the cache for every currently-running regular app. Call from
+    /// applicationDidFinishLaunching so the first HUD after app launch has
+    /// icons ready to serve.
+    static func warmRunningApps() {
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+            _ = icon(for: app)
+        }
+    }
+
+    /// Warm a single newly-launched app. Call from the
+    /// NSWorkspace.didLaunchApplicationNotification observer.
+    static func warm(for app: NSRunningApplication) {
+        _ = icon(for: app)
+    }
+}
+
 /// Enumerates regular apps with at least one window on the current Mission
 /// Control space — including **minimised windows** and **hidden-app windows**.
 ///
@@ -72,7 +130,7 @@ final class SwitcherAppResolver {
 
             let bundleID = app.bundleIdentifier ?? "unknown.\(pid)"
             let name = app.localizedName ?? bundleID
-            let icon = app.icon ?? NSImage(size: NSSize(width: 1, height: 1))
+            let icon = AppIconCache.icon(for: app)
             let title = windowsOnSpace
                 .first(where: { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
                 .title ?? ""
