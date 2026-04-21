@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		5EF0B3792F95378700E097E2 /* ReconfigurationObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3752F95378700E097E2 /* ReconfigurationObserver.swift */; };
-		5EF0B37A2F95378700E097E2 /* RestartCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3762F95378700E097E2 /* RestartCoordinator.swift */; };
+		5EF0B37A2F95378700E097E2 /* DriftMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3762F95378700E097E2 /* DriftMonitor.swift */; };
 		5EF0B37B2F95378700E097E2 /* SpacesPlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3772F95378700E097E2 /* SpacesPlist.swift */; };
 		5EF0B37C2F95378700E097E2 /* ActiveSpaceLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3732F95378700E097E2 /* ActiveSpaceLogger.swift */; };
 		5EF0B37D2F95378700E097E2 /* ActiveSpaceFingerprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3722F95378700E097E2 /* ActiveSpaceFingerprint.swift */; };
@@ -59,7 +59,7 @@
 		5EF0B3732F95378700E097E2 /* ActiveSpaceLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSpaceLogger.swift; sourceTree = "<group>"; };
 		5EF0B3742F95378700E097E2 /* cc.jorviksoftware.ActiveSpace.agent.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = cc.jorviksoftware.ActiveSpace.agent.plist; sourceTree = "<group>"; };
 		5EF0B3752F95378700E097E2 /* ReconfigurationObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconfigurationObserver.swift; sourceTree = "<group>"; };
-		5EF0B3762F95378700E097E2 /* RestartCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestartCoordinator.swift; sourceTree = "<group>"; };
+		5EF0B3762F95378700E097E2 /* DriftMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriftMonitor.swift; sourceTree = "<group>"; };
 		5EF0B3772F95378700E097E2 /* SpacesPlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesPlist.swift; sourceTree = "<group>"; };
 		5EF0B37F2F95380D00E097E2 /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
 		AA000030 /* ActiveSpaceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSpaceApp.swift; sourceTree = "<group>"; };
@@ -130,7 +130,7 @@
 				5EF0B3732F95378700E097E2 /* ActiveSpaceLogger.swift */,
 				5EF0B3742F95378700E097E2 /* cc.jorviksoftware.ActiveSpace.agent.plist */,
 				5EF0B3752F95378700E097E2 /* ReconfigurationObserver.swift */,
-				5EF0B3762F95378700E097E2 /* RestartCoordinator.swift */,
+				5EF0B3762F95378700E097E2 /* DriftMonitor.swift */,
 				5EF0B3772F95378700E097E2 /* SpacesPlist.swift */,
 				AA000030 /* ActiveSpaceApp.swift */,
 				AA000031 /* AppDelegate.swift */,
@@ -256,7 +256,7 @@
 				AA000051 /* AppDelegate.swift in Sources */,
 				AA000052 /* CGSPrivate.swift in Sources */,
 				5EF0B3792F95378700E097E2 /* ReconfigurationObserver.swift in Sources */,
-				5EF0B37A2F95378700E097E2 /* RestartCoordinator.swift in Sources */,
+				5EF0B37A2F95378700E097E2 /* DriftMonitor.swift in Sources */,
 				5EF0B37B2F95378700E097E2 /* SpacesPlist.swift in Sources */,
 				5EF0B37C2F95378700E097E2 /* ActiveSpaceLogger.swift in Sources */,
 				5EF0B37D2F95378700E097E2 /* ActiveSpaceFingerprint.swift in Sources */,

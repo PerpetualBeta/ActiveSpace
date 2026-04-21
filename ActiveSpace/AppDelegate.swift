@@ -85,10 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let agentLabel     = "cc.jorviksoftware.ActiveSpace.agent"
     private var agentService: SMAppService { SMAppService.agent(plistName: Self.agentPlistName) }
 
-    // MARK: - Drift-mitigation observer + restart
+    // MARK: - Drift observer + diagnostic monitor
 
     private var reconfigurationObserver: ReconfigurationObserver?
-    private var restartCoordinator: RestartCoordinator?
+    private var driftMonitor: DriftMonitor?
 
     private var statusItem: NSStatusItem!
     private let observer = SpaceObserver()
@@ -139,16 +139,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         VirtualDisplay.startManaging()
 
-        // Drift detection → self-restart. Observer captures the initial
-        // fingerprint in its init; coordinator evaluates absolute triggers
-        // against it on start() before any event fires.
+        // Drift detection → diagnostic log. The launchd keep-alive agent
+        // still provides crash-resilience respawn; the monitor just
+        // classifies and logs drift events for future debugging.
         let reconfObserver = ReconfigurationObserver { [weak self] event in
-            self?.restartCoordinator?.handle(event: event)
+            self?.driftMonitor?.handle(event: event)
         }
-        let coordinator = RestartCoordinator(observer: reconfObserver)
+        let monitor = DriftMonitor(observer: reconfObserver)
         self.reconfigurationObserver = reconfObserver
-        self.restartCoordinator = coordinator
-        coordinator.start()
+        self.driftMonitor = monitor
+        monitor.start()
         reconfObserver.start()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
