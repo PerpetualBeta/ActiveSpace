@@ -163,11 +163,10 @@ final class ReconfigurationObserver {
         lastFingerprint = now
 
         ActiveSpaceLogger.log("EVENT sources=[\(sources.map { $0.rawValue }.joined(separator: ", "))] changed=\(event.changed)")
-        if event.changed {
-            ActiveSpaceLogger.log("  before: \(event.before)")
-            ActiveSpaceLogger.log("  after:  \(event.after)")
-        }
-
+        // Before/after fingerprint detail is logged by DriftMonitor when a
+        // drift trigger actually fires — suppressing it here keeps zero-drift
+        // days legible (every activeSpace marker shift registers as changed,
+        // but isn't substantively interesting).
         onEvent(event)
     }
 }

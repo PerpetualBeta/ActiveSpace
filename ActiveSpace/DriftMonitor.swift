@@ -76,14 +76,14 @@ final class DriftMonitor {
         evaluateAbsoluteTriggers(on: event.after, appending: &triggers)
 
         guard !triggers.isEmpty else { return }
-        logDrift(triggers)
+        logDrift(triggers, before: event.before, after: event.after)
     }
 
     private func evaluateAbsoluteTriggers(on fingerprint: ActiveSpaceFingerprint) {
         var triggers: [DriftTrigger] = []
         evaluateAbsoluteTriggers(on: fingerprint, appending: &triggers)
         guard !triggers.isEmpty else { return }
-        logDrift(triggers)
+        logDrift(triggers, before: nil, after: fingerprint)
     }
 
     private func evaluateAbsoluteTriggers(on fingerprint: ActiveSpaceFingerprint, appending triggers: inout [DriftTrigger]) {
@@ -92,7 +92,16 @@ final class DriftMonitor {
         }
     }
 
-    private func logDrift(_ triggers: [DriftTrigger]) {
+    /// Emit a drift verdict with full before/after context. `before` is nil
+    /// for startup absolute-trigger evaluations where there's no prior
+    /// fingerprint to diff against — in that case log the current state only.
+    private func logDrift(_ triggers: [DriftTrigger], before: ActiveSpaceFingerprint?, after: ActiveSpaceFingerprint) {
+        if let before {
+            ActiveSpaceLogger.log("  before: \(before)")
+            ActiveSpaceLogger.log("  after:  \(after)")
+        } else {
+            ActiveSpaceLogger.log("  state:  \(after)")
+        }
         let list = triggers.map(\.rawValue).sorted().joined(separator: ",")
         ActiveSpaceLogger.log("  drift-observed(\(list))")
     }
