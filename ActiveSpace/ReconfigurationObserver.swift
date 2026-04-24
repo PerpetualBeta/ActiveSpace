@@ -90,7 +90,7 @@ final class ReconfigurationObserver {
         installCGCallback()
         startPollTimer()
 
-        ActiveSpaceLogger.log("Started. Initial fingerprint: \(lastFingerprint)")
+        aslog("Started. Initial fingerprint: \(lastFingerprint)")
     }
 
     /// Current fingerprint used as the diff baseline. Exposed so RestartCoordinator
@@ -162,7 +162,7 @@ final class ReconfigurationObserver {
         let event = ReconfigurationEvent(date: Date(), sources: sources, before: lastFingerprint, after: now)
         lastFingerprint = now
 
-        ActiveSpaceLogger.log("EVENT sources=[\(sources.map { $0.rawValue }.joined(separator: ", "))] changed=\(event.changed)")
+        aslog("EVENT sources=[\(sources.map { $0.rawValue }.joined(separator: ", "))] changed=\(event.changed)")
         // Before/after fingerprint detail is logged by DriftMonitor when a
         // drift trigger actually fires — suppressing it here keeps zero-drift
         // days legible (every activeSpace marker shift registers as changed,

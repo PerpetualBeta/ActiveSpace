@@ -205,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard agentService.status == .notRegistered else { return }
         do {
             try agentService.register()
-            ActiveSpaceLogger.log("Registered keep-alive agent (\(Self.agentPlistName))")
+            aslog("Registered keep-alive agent (\(Self.agentPlistName))")
         } catch {
             NSLog("ActiveSpace: agent register failed: \(error)")
         }
@@ -226,7 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `terminate(nil)` exits with code 0, which KeepAlive's
     /// `SuccessfulExit=false` rule correctly ignores.
     private func handOffToLaunchdAndExit() {
-        ActiveSpaceLogger.log("User-launched instance detected; kickstarting launchd-owned instance")
+        aslog("User-launched instance detected; kickstarting launchd-owned instance")
         let task = Process()
         task.launchPath = "/bin/launchctl"
         task.arguments = ["kickstart", "gui/\(getuid())/\(Self.agentLabel)"]

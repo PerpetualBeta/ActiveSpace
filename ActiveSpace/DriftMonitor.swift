@@ -69,7 +69,7 @@ final class DriftMonitor {
         }
 
         if withinGrace, !triggers.isEmpty {
-            ActiveSpaceLogger.log("  (startup grace — ignored, relative triggers: \(triggers.map(\.rawValue).joined(separator: ",")))")
+            aslog("  (startup grace — ignored, relative triggers: \(triggers.map(\.rawValue).joined(separator: ",")))")
             triggers.removeAll()
         }
 
@@ -97,12 +97,12 @@ final class DriftMonitor {
     /// fingerprint to diff against — in that case log the current state only.
     private func logDrift(_ triggers: [DriftTrigger], before: ActiveSpaceFingerprint?, after: ActiveSpaceFingerprint) {
         if let before {
-            ActiveSpaceLogger.log("  before: \(before)")
-            ActiveSpaceLogger.log("  after:  \(after)")
+            aslog("  before: \(before)")
+            aslog("  after:  \(after)")
         } else {
-            ActiveSpaceLogger.log("  state:  \(after)")
+            aslog("  state:  \(after)")
         }
         let list = triggers.map(\.rawValue).sorted().joined(separator: ",")
-        ActiveSpaceLogger.log("  drift-observed(\(list))")
+        aslog("  drift-observed(\(list))")
     }
 }
