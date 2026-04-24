@@ -241,11 +241,100 @@ static NSString *_virtualDisplayUUID = nil;
 }
 
 + (void)destroy {
-    if (_virtualDisplay) {
-        ASLog(@"Destroying virtual display");
-        _virtualDisplay = nil;
-        _virtualDisplayUUID = nil;
+    if (!_virtualDisplay) return;
+
+    ASLog(@"Destroying virtual display");
+
+    // WindowServer caches bezel / shadow-ring layer-tree state for every
+    // registered display. Simply dropping our CGVirtualDisplay reference
+    // removes the display from NSScreen.screens but doesn't purge that
+    // cached state — the residue shows up as faint corner drop-shadows at
+    // the virtual's last-known position and persists until the user logs
+    // out. Before releasing, force the compositor to (a) move the display's
+    // rendering region to an off-screen coordinate and (b) shrink its mode
+    // to 1x1, so any leftover geometry ends up at zero-area or in an
+    // invisible part of the coordinate space.
+
+    NSNumber *displayIDNum = [_virtualDisplay valueForKey:@"displayID"];
+    CGDirectDisplayID cgID = (CGDirectDisplayID)displayIDNum.unsignedIntValue;
+
+    // Step 1 — relocate to an extreme off-screen coordinate.
+    CGDisplayConfigRef config = NULL;
+    CGError beginErr = CGBeginDisplayConfiguration(&config);
+    if (beginErr == kCGErrorSuccess && config) {
+        CGConfigureDisplayOrigin(config, cgID, -32768, -32768);
+        CGError completeErr = CGCompleteDisplayConfiguration(config, kCGConfigureForSession);
+        ASLog(@"  destroy step 1: relocating (displayID=%u) to (-32768,-32768) → CGCompleteDisplayConfiguration=%d", cgID, completeErr);
+    } else {
+        ASLog(@"  destroy step 1: CGBeginDisplayConfiguration failed (%d) — skipping relocate", beginErr);
     }
+
+    // Step 2 — shrink the display's advertised mode to 1x1 so the compositor
+    // reduces its rendering region to a null area before we release.
+    Class CGVirtualDisplayMode = NSClassFromString(@"CGVirtualDisplayMode");
+    Class CGVirtualDisplaySettings = NSClassFromString(@"CGVirtualDisplaySettings");
+    if (CGVirtualDisplayMode && CGVirtualDisplaySettings) {
+        SEL modeInitSel = NSSelectorFromString(@"initWithWidth:height:refreshRate:");
+        NSMethodSignature *modeSig = [CGVirtualDisplayMode instanceMethodSignatureForSelector:modeInitSel];
+        id tinyMode = nil;
+        if (modeSig) {
+            NSInvocation *modeInv = [NSInvocation invocationWithMethodSignature:modeSig];
+            modeInv.selector = modeInitSel;
+            unsigned int w = 1, h = 1;
+            double rate = 60.0;
+            [modeInv setArgument:&w atIndex:2];
+            [modeInv setArgument:&h atIndex:3];
+            [modeInv setArgument:&rate atIndex:4];
+            id modeObj = [CGVirtualDisplayMode alloc];
+            [modeInv invokeWithTarget:modeObj];
+            __unsafe_unretained id result;
+            [modeInv getReturnValue:&result];
+            tinyMode = result;
+        }
+
+        if (tinyMode) {
+            id tinySettings = [[CGVirtualDisplaySettings alloc] init];
+            SEL setModesSel = NSSelectorFromString(@"setModes:");
+            NSMethodSignature *setModesSig = [tinySettings methodSignatureForSelector:setModesSel];
+            if (setModesSig) {
+                NSInvocation *setModesInv = [NSInvocation invocationWithMethodSignature:setModesSig];
+                setModesInv.selector = setModesSel;
+                setModesInv.target = tinySettings;
+                NSArray *modeArray = @[tinyMode];
+                [setModesInv setArgument:&modeArray atIndex:2];
+                [setModesInv invoke];
+            } else {
+                @try { [tinySettings setValue:@[tinyMode] forKey:@"modes"]; }
+                @catch (NSException *e) { /* best-effort */ }
+            }
+
+            SEL applySel = NSSelectorFromString(@"applySettings:");
+            NSMethodSignature *applySig = [_virtualDisplay methodSignatureForSelector:applySel];
+            if (applySig) {
+                NSInvocation *applyInv = [NSInvocation invocationWithMethodSignature:applySig];
+                applyInv.selector = applySel;
+                applyInv.target = _virtualDisplay;
+                [applyInv setArgument:&tinySettings atIndex:2];
+                [applyInv invoke];
+                BOOL applied = NO;
+                if (strcmp(applySig.methodReturnType, @encode(BOOL)) == 0) {
+                    [applyInv getReturnValue:&applied];
+                }
+                ASLog(@"  destroy step 2: shrinking to 1x1 mode → applySettings=%@", applied ? @"YES" : @"NO/void");
+            } else {
+                ASLog(@"  destroy step 2: virtual display has no applySettings: — skipping shrink");
+            }
+        } else {
+            ASLog(@"  destroy step 2: failed to construct 1x1 CGVirtualDisplayMode — skipping shrink");
+        }
+    } else {
+        ASLog(@"  destroy step 2: CGVirtualDisplayMode/Settings class unavailable — skipping shrink");
+    }
+
+    // Step 3 — release. ARC deallocates the CGVirtualDisplay object.
+    ASLog(@"  destroy step 3: releasing reference");
+    _virtualDisplay = nil;
+    _virtualDisplayUUID = nil;
 }
 
 @end
