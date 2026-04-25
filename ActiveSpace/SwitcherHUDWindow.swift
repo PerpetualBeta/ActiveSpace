@@ -113,6 +113,13 @@ private final class SwitcherContentView: NSView {
     private var selectedIndex = 0
     private var cachedFittingSize: NSSize = .zero
 
+    // Proportional scale for icons, gap, ring, badges. Recomputed in
+    // `computeFittingSize` from item count vs the main screen's width budget,
+    // so the HUD always fits — even with many apps on the current space.
+    private var scale: CGFloat = 1.0
+    private static let minScale: CGFloat = 0.35
+    private static let widthBudgetFraction: CGFloat = 0.92
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -158,6 +165,7 @@ private final class SwitcherContentView: NSView {
         }
 
         cachedFittingSize = computeFittingSize()
+        ring.cornerRadius = 18 * scale
         invalidateIntrinsicContentSize()
         needsLayout = true
     }
@@ -203,26 +211,44 @@ private final class SwitcherContentView: NSView {
 
     private func computeFittingSize() -> NSSize {
         let count = max(1, items.count)
-        let rowWidth = CGFloat(count) * Self.iconSize + CGFloat(max(0, count - 1)) * Self.iconGap
-        let width = rowWidth + Self.outerPadding * 2
-        let height = Self.outerPadding + Self.iconSize + Self.titleGap + Self.titleHeight + Self.outerPadding
+        let naturalRowWidth = CGFloat(count) * Self.iconSize + CGFloat(max(0, count - 1)) * Self.iconGap
+        let outer = Self.outerPadding * 2
+
+        // Budget: 92% of the screen we'll show on (HUD always centres on NSScreen.main).
+        let screen = NSScreen.main ?? NSScreen.screens.first
+        let screenWidth = screen?.visibleFrame.width ?? 1280
+        let availableForRow = max(120, screenWidth * Self.widthBudgetFraction - outer)
+
+        let raw = naturalRowWidth > 0 ? availableForRow / naturalRowWidth : 1.0
+        scale = min(1.0, max(Self.minScale, raw))
+        // If raw < minScale, the row will still overflow at the floor — wrap
+        // would be the next move. Not worth implementing until anyone hits it.
+
+        let scaledIcon = Self.iconSize * scale
+        let scaledGap = Self.iconGap * scale
+        let rowWidth = CGFloat(count) * scaledIcon + CGFloat(max(0, count - 1)) * scaledGap
+        let width = rowWidth + outer
+        let height = Self.outerPadding + scaledIcon + Self.titleGap + Self.titleHeight + Self.outerPadding
         return NSSize(width: width, height: height)
     }
 
     private func positionIcons() {
         let count = max(1, items.count)
-        let rowWidth = CGFloat(count) * Self.iconSize + CGFloat(max(0, count - 1)) * Self.iconGap
+        let scaledIcon = Self.iconSize * scale
+        let scaledGap = Self.iconGap * scale
+        let rowWidth = CGFloat(count) * scaledIcon + CGFloat(max(0, count - 1)) * scaledGap
         let startX = (bounds.width - rowWidth) / 2
         let iconY = Self.outerPadding + Self.titleHeight + Self.titleGap
-        let badgeSize: CGFloat = 26
+        let badgeSize: CGFloat = max(16, 26 * scale)
+        let badgeNudge: CGFloat = 4 * scale
 
         for (i, iv) in iconViews.enumerated() {
-            let x = startX + CGFloat(i) * (Self.iconSize + Self.iconGap)
-            iv.frame = NSRect(x: x, y: iconY, width: Self.iconSize, height: Self.iconSize)
+            let x = startX + CGFloat(i) * (scaledIcon + scaledGap)
+            iv.frame = NSRect(x: x, y: iconY, width: scaledIcon, height: scaledIcon)
             if let badge = badgeViews[i] {
                 badge.frame = NSRect(
-                    x: x + Self.iconSize - badgeSize + 4,
-                    y: iconY - 4,
+                    x: x + scaledIcon - badgeSize + badgeNudge,
+                    y: iconY - badgeNudge,
                     width: badgeSize,
                     height: badgeSize
                 )
@@ -238,7 +264,8 @@ private final class SwitcherContentView: NSView {
             return
         }
         let iconFrame = iconViews[index].frame
-        let ringFrame = iconFrame.insetBy(dx: -Self.ringPadding, dy: -Self.ringPadding)
+        let scaledRingPadding = Self.ringPadding * scale
+        let ringFrame = iconFrame.insetBy(dx: -scaledRingPadding, dy: -scaledRingPadding)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         ring.frame = ringFrame
