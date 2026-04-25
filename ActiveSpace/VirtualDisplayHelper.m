@@ -44,6 +44,11 @@ static void dumpClass(Class cls, NSString *label) {
 
 static id _virtualDisplay = nil;
 static NSString *_virtualDisplayUUID = nil;
+static CGDirectDisplayID _virtualDisplayID = 0;
+
++ (CGDirectDisplayID)displayID {
+    return _virtualDisplayID;
+}
 
 + (NSString *)displayUUIDString {
     // Lazily retry UUID lookup if it wasn't available at creation time.
@@ -145,6 +150,7 @@ static NSString *_virtualDisplayUUID = nil;
     _virtualDisplay = display;
     NSNumber *displayID = [display valueForKey:@"displayID"];
     CGDirectDisplayID cgID = (CGDirectDisplayID)displayID.unsignedIntValue;
+    _virtualDisplayID = cgID;
     CFUUIDRef uuid = CGDisplayCreateUUIDFromDisplayID(cgID);
     if (uuid) {
         CFStringRef uuidStr = CFUUIDCreateString(NULL, uuid);
@@ -335,6 +341,7 @@ static NSString *_virtualDisplayUUID = nil;
     ASLog(@"  destroy step 3: releasing reference");
     _virtualDisplay = nil;
     _virtualDisplayUUID = nil;
+    _virtualDisplayID = 0;
 }
 
 @end
