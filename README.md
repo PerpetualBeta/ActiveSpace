@@ -1,88 +1,101 @@
 # ActiveSpace
 
-A macOS menu-bar app that shows your current Mission Control space number and lets you switch spaces by clicking.
+A macOS menu-bar app that shows your current Mission Control space and switches spaces instantly — by click, popover button, or configurable keyboard shortcut. Optionally replaces `Cmd-Tab` with a space-aware switcher that only shows apps with windows on the current space.
 
 ## What it does
 
-- Shows the current space number as a numbered bubble in the menu bar
-- **1 space:** icon only, no interaction
-- **2 spaces:** left-click toggles between them
-- **3+ spaces:** left-click opens a popover with numbered buttons — click any to jump directly to it
-- **Right-click:** Quit
+- **Numbered bubble in the menu bar** showing the current space; updates live whether you switch by ActiveSpace, Mission Control, or trackpad gesture.
+- **Click to switch.** With two spaces a left-click toggles between them; with three or more it opens a popover with numbered buttons; with one space the icon is just an indicator.
+- **Configurable keyboard shortcuts** for next/previous space, with wrap-around.
+- **Instant transitions.** No animation, no sliding, no wait — across single-display, dual-display, lid-open, and lid-closed configurations.
+- **Optional space-aware Cmd-Tab Switcher** (off by default). When on, `Cmd-Tab` shows only apps with windows on the current space — including minimised windows and windows of hidden apps. Cycle with `Tab` or arrows, reverse with `Shift-Tab`, commit by releasing `Cmd` or pressing `Return`, cancel with `Esc`. When off, native `Cmd-Tab` is completely untouched.
 
-The icon updates instantly when you switch spaces via Mission Control, trackpad gestures, or keyboard shortcuts.
+## Settings
+
+Right-click the menu-bar bubble and choose **Settings…**:
+
+- **Keyboard shortcuts** — Next Space and Previous Space hotkeys.
+- **Switcher** — toggle the space-aware Cmd-Tab replacement.
+- **Permissions** — live status of Accessibility and Input Monitoring with grant buttons.
+- **Launch at Login** — start automatically.
+- **Auto-update** — schedule + optional automatic install.
+
+## Permissions
+
+Two are required, both manageable from Settings:
+
+- **Accessibility** — required for space switching. macOS prompts on first launch.
+- **Input Monitoring** — required for keyboard shortcuts and the Switcher. If not granted, ActiveSpace shows an alert with a direct link to the correct System Settings pane.
+
+To avoid conflicts with macOS's built-in shortcuts, disable `Control-←` and `Control-→` in System Settings → Keyboard → Keyboard Shortcuts → Mission Control.
+
+## How it works
+
+Hybrid switching strategy chosen per display count:
+
+- **Single display:** direct CGS API (`CGSHideSpaces` / `CGSShowSpaces` / `CGSManagedDisplaySetCurrentSpace`) for an instant flash-free transition. Backed by an invisible 640×480 virtual display that forces macOS off its single-display "Main" identifier and onto UUID-based identifiers — required for clean Dock compositing on macOS 14+.
+- **Multi-display (incl. spans-displays mode):** synthetic dock-swipe gestures via `CGEvent` because the direct API doesn't tell `WindowServer` to move windows or update Mission Control state.
+
+The virtual display is created automatically when you have a single physical display (laptop alone, or laptop with lid closed and one external) and torn down again when a second display appears. While present, ActiveSpace pins it to the right edge of main, fences the cursor out of it, and resets menu-bar coordinate state on every display reconfiguration so windows and menus stay where you expect them.
 
 ## Architecture
 
 | File | Purpose |
 |---|---|
-| `ActiveSpaceApp.swift` | `@main` entry; wires `AppDelegate` via `@NSApplicationDelegateAdaptor` |
-| `AppDelegate.swift` | Owns the `NSStatusItem`, routes clicks, manages the popover |
-| `SpaceObserver.swift` | `ObservableObject` that tracks current space index and total space count |
-| `SpaceSwitcher.swift` | Executes space switches via AppleScript keyboard simulation |
-| `MenuBarIcon.swift` | Renders the numbered bubble icon dynamically |
-| `SpaceSelectorView.swift` | SwiftUI popover UI showing numbered space buttons |
-| `CGSPrivate.swift` | Swift bindings for private CoreGraphics space APIs |
+| `ActiveSpaceApp.swift` | `@main` entry; wires `AppDelegate` |
+| `AppDelegate.swift` | Status item, event tap, click routing, popover, settings, keep-alive agent registration |
+| `SpaceObserver.swift` | `@Published` current/total space counts; CGS polling + notifications |
+| `SpaceSwitcher.swift` | Hybrid direct-API / synthetic-gesture switching |
+| `VirtualDisplay.swift` | Manages the virtual display, drift reposition, cursor fence, post-create + post-destroy menu-bar resets |
+| `VirtualDisplayHelper.{h,m}` | Obj-C bridge to the private `CGVirtualDisplay` classes |
+| `MenuBarIcon.swift` | Numbered bubble rendering |
+| `SpaceSelectorView.swift` | SwiftUI popover (3+ spaces) |
+| `TransitionOverlay.swift` | Per-screen blur overlay that masks intermediate-space flashes during multi-step jumps |
+| `SwitcherController.swift` | State machine for the space-aware Cmd-Tab switcher |
+| `SwitcherHUDWindow.swift` | Borderless HUD with proportional icon scaling |
+| `SwitcherAppResolver.swift` | Per-window space membership via `SLSCopySpacesForWindows` |
+| `SwitcherAppStack.swift` | Per-space MRU bundle-ID stack |
+| `AppIconCache.swift` | Pre-warms scaled icons so the first HUD draw is snappy |
+| `ReconfigurationObserver.swift` | Six-source observer for display/space/screen-lock/poll events |
+| `DriftMonitor.swift` | Classifies reconfiguration events; logs drift verdicts |
+| `CGSPrivate.swift` | Swift bindings for private CoreGraphics, SkyLight, and Accessibility APIs |
 
-### SpaceObserver
+## If your Dock disappears
 
-Queries the private CoreGraphics `CGSCopyManagedDisplaySpaces` API to enumerate all spaces across all displays and identify which is current. Refreshes via three mechanisms:
-
-1. `NSWorkspace.activeSpaceDidChangeNotification` — fires on every space switch
-2. `NSApplication.didChangeScreenParametersNotification` — fires when spaces are added/removed via Mission Control
-3. A 2-second poll timer — backstop for edge cases where notifications don't fire
-
-Publishes `@Published currentSpaceIndex` (1-based) and `@Published totalSpaces`, which AppDelegate subscribes to via Combine to update the icon.
-
-### SpaceSwitcher
-
-Switches spaces by sending `Control+Arrow` key events via `NSAppleScript` targeting System Events. Uses key codes 123 (left arrow) and 124 (right arrow), with a 0.35s delay between presses when jumping multiple spaces. Runs in the app's TCC context — requires Accessibility permission to be granted once.
-
-### MenuBarIcon
-
-Renders the menu bar icon dynamically using `NSImage` with `lockFocus`. Draws a filled rounded-rect bubble sized to the space number text, with a 7pt horizontal and 3pt vertical padding and a minimum width of 22pt. Uses `NSColor.controlAccentColor` when highlighted (active space in popover), dark gray otherwise. `isTemplate = false` so the exact colours are preserved.
-
-### Click routing (AppDelegate)
-
-```
-Left-click
-├── 1 space  → no-op
-├── 2 spaces → SpaceSwitcher.toggle()
-└── 3+ spaces → show NSPopover with SpaceSelectorView
-
-Right-click → Quit menu
-```
-
-### Private API usage
-
-`CGSPrivate.swift` binds three private CoreGraphics symbols using `@_silgen_name`:
-
-- `CGSMainConnectionID()` — returns the current process's CG connection
-- `CGSCopyManagedDisplaySpaces(_:)` — returns an array of display dictionaries, each containing a `Spaces` array and a `Current Space` entry
-- `CGSGetWorkspace(_:_:)` — legacy workspace query (used as fallback)
-
-These APIs have been stable across macOS versions and are used by several open-source space utilities (WhichSpace, Spaceman, etc.).
+ActiveSpace uses an invisible virtual display on single-monitor configurations. Very rarely, a display reconfiguration can cause the Dock to migrate onto it. If that happens, right-click the bubble in the menu bar and choose **Quit** — your Dock will return immediately.
 
 ## Building
 
 ```bash
-open ActiveSpace.xcodeproj
-# Then Cmd+B / Cmd+R in Xcode
+git clone https://github.com/PerpetualBeta/ActiveSpace.git
+open ActiveSpace/ActiveSpace.xcodeproj
+# Cmd-B to build, Cmd-R to run
 ```
 
 Or from the command line:
 
 ```bash
 xcodebuild -project ActiveSpace.xcodeproj \
-  -target ActiveSpace \
+  -scheme ActiveSpace \
   -configuration Release \
   build
 ```
 
 ## Requirements
 
-- macOS 13.0+
-- **Accessibility permission** — required for AppleScript key simulation. macOS will prompt on first space switch attempt.
+- macOS 14.0 (Sonoma) or later
+- Universal binary (Apple Silicon and Intel)
+- Accessibility and Input Monitoring permissions (both grantable from the Settings pane)
+
+## Diagnostic logging
+
+ActiveSpace ships with disk logging off. Enable it for support or self-debugging with:
+
+```bash
+defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.debugLogging -bool YES
+```
+
+Then quit and relaunch. The log lives at `/tmp/activespace.log`. Disable again with `-bool NO` (or `defaults delete`) plus another relaunch.
 
 ---
 
