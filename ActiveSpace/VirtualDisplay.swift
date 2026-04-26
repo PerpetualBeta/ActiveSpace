@@ -143,19 +143,15 @@ enum VirtualDisplay {
     }
 
     /// Returns the current virtual display's bounds if present, else nil.
+    /// Uses the synchronously-captured `CGDirectDisplayID` from the helper rather
+    /// than UUID-iterating `NSScreen.screens` — the UUID lookup is lazily resolved
+    /// and races right after creation, leaving the cursor fence unarmed even when
+    /// the virtual is fully created and queryable via its display ID.
     private static func currentVirtualRect() -> CGRect? {
-        guard VirtualDisplayHelper.isCreated(),
-              let virtualUUID = VirtualDisplayHelper.displayUUIDString() else { return nil }
-        for screen in NSScreen.screens {
-            guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { continue }
-            let cgID = CGDirectDisplayID(n.uint32Value)
-            if let uuid = CGDisplayCreateUUIDFromDisplayID(cgID)?.takeRetainedValue(),
-               let uuidStr = CFUUIDCreateString(nil, uuid) as String?,
-               uuidStr == virtualUUID {
-                return CGDisplayBounds(cgID)
-            }
-        }
-        return nil
+        guard VirtualDisplayHelper.isCreated() else { return nil }
+        let virtualID = VirtualDisplayHelper.displayID()
+        guard virtualID != 0 else { return nil }
+        return CGDisplayBounds(virtualID)
     }
 
     /// CFUUID-string identifier of the virtual display, or nil if not created.
@@ -233,23 +229,14 @@ enum VirtualDisplay {
     /// to one attempt every 500ms and capped at 5 attempts per creation to
     /// avoid fighting macOS in a loop if the reposition can't be made to stick.
     private static func enforceVirtualPosition() {
-        guard VirtualDisplayHelper.isCreated(),
-              let virtualUUID = VirtualDisplayHelper.displayUUIDString() else { return }
+        guard VirtualDisplayHelper.isCreated() else { return }
 
-        // Find the virtual display's current CGDirectDisplayID via its UUID
-        // (the ID itself churns across recreation; UUID is stable).
-        var virtualID: CGDirectDisplayID?
-        for screen in NSScreen.screens {
-            guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { continue }
-            let cgID = CGDirectDisplayID(n.uint32Value)
-            if let uuid = CGDisplayCreateUUIDFromDisplayID(cgID)?.takeRetainedValue(),
-               let uuidStr = CFUUIDCreateString(nil, uuid) as String?,
-               uuidStr == virtualUUID {
-                virtualID = cgID
-                break
-            }
-        }
-        guard let virtualID else { return }
+        // Use the synchronously-captured display ID rather than UUID-iterating
+        // NSScreen.screens. The UUID lookup is racy right after creation —
+        // when it fails we'd return silently here, defeating the verification
+        // and retry logic below as well as keeping the cursor fence unarmed.
+        let virtualID = VirtualDisplayHelper.displayID()
+        guard virtualID != 0 else { return }
 
         let mainBounds = CGDisplayBounds(CGMainDisplayID())
         let expectedX = Int32(mainBounds.origin.x + mainBounds.size.width)
