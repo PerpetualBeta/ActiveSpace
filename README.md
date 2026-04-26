@@ -10,6 +10,15 @@ A macOS menu-bar app that shows your current Mission Control space and switches 
 - **Instant transitions.** No animation, no sliding, no wait — across single-display, dual-display, lid-open, and lid-closed configurations.
 - **Optional space-aware Cmd-Tab Switcher** (off by default). When on, `Cmd-Tab` shows only apps with windows on the current space — including minimised windows and windows of hidden apps. Cycle with `Tab` or arrows, reverse with `Shift-Tab`, commit by releasing `Cmd` or pressing `Return`, cancel with `Esc`. When off, native `Cmd-Tab` is completely untouched.
 
+## Installation
+
+Two formats on every release — both signed and notarised, pick whichever suits:
+
+- **[Installer (`.pkg`)](https://github.com/PerpetualBeta/ActiveSpace/releases/latest/download/ActiveSpace.pkg)** — recommended for first-time installs. Double-click to run; macOS Installer places the app in `/Applications` without quarantine or App Translocation.
+- **[Download (`.zip`)](https://github.com/PerpetualBeta/ActiveSpace/releases/latest)** — unzip and drag `ActiveSpace.app` to your Applications folder.
+
+Launch ActiveSpace from `/Applications` and grant Accessibility and Input Monitoring permissions when prompted.
+
 ## Settings
 
 Right-click the menu-bar bubble and choose **Settings…**:
