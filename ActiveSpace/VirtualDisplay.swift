@@ -183,6 +183,29 @@ enum VirtualDisplay {
 
         aslog("VirtualDisplay.reconcile: real=\(realCount) haveVirtual=\(haveVirtual) needVirtual=\(needVirtual)")
 
+        // Heal: during a hot-swap that briefly drops to zero real displays, the
+        // virtual is promoted to CGMainDisplayID and the Dock binds to it. When
+        // a real display returns, the Dock stays trapped on the virtual until
+        // the user quits ActiveSpace. Detect that state and destroy the virtual
+        // ourselves — the next reconcile pass will recreate it cleanly with the
+        // real display as main, and the Dock follows the real display in the gap.
+        if haveVirtual {
+            let mainID = CGMainDisplayID()
+            let virtualID = VirtualDisplayHelper.displayID()
+            if virtualID != 0 && mainID == virtualID && realCount >= 1 && !destroyInFlight {
+                aslog("VirtualDisplay.reconcile: HEAL — main=virtual, realCount=\(realCount); destroying to free Dock")
+                destroyInFlight = true
+                defer { destroyInFlight = false }
+                pendingPostCreateReset = false
+                VirtualDisplayHelper.destroy()
+                updateCursorFence(nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                    Self.reconcile()
+                }
+                return
+            }
+        }
+
         if needVirtual && !haveVirtual {
             _ = VirtualDisplayHelper.create()
             enforceAttemptCount = 0   // fresh creation — reset drift counter
@@ -255,11 +278,23 @@ enum VirtualDisplay {
             return
         }
         if enforceAttemptCount >= maxEnforceAttempts {
-            aslog("enforceVirtualPosition: giving up after \(maxEnforceAttempts) attempts — virtual at (\(Int(current.origin.x)),\(Int(current.origin.y)))")
-            // Best-effort: fire any pending post-create reset. Even with the
-            // position wrong, a reset can't make things worse and may heal
-            // some corruption.
+            aslog("enforceVirtualPosition: giving up after \(maxEnforceAttempts) attempts — virtual at (\(Int(current.origin.x)),\(Int(current.origin.y))); destroy+recreate")
+            // A virtual stuck at a position we couldn't enforce is exactly the
+            // "attractive landing spot for the Dock" condition the enforcement
+            // was meant to prevent. Tear it down so reconcile can recreate it
+            // cleanly with main re-evaluated; in the gap the Dock has only the
+            // real display to bind to.
             firePendingPostCreateReset()
+            enforceAttemptCount = 0
+            if !destroyInFlight {
+                destroyInFlight = true
+                defer { destroyInFlight = false }
+                VirtualDisplayHelper.destroy()
+                updateCursorFence(nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                    Self.reconcile()
+                }
+            }
             return
         }
 
