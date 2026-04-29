@@ -69,10 +69,20 @@ private func cursorFenceCallback(
 enum VirtualDisplay {
 
     private static var screenObserver: NSObjectProtocol?
+    private static var lockObservers: [NSObjectProtocol] = []
     private static var lastEnforceAttempt: Date?
     private static var enforceAttemptCount = 0
     private static let maxEnforceAttempts = 5
     private static let enforceMinInterval: TimeInterval = 0.5
+
+    /// Set while the screen is locked / screensaver is running. macOS otherwise
+    /// renders one of its per-display screensaver instances onto the 640×480
+    /// virtual, where the user either sees nothing (it's invisible) or sees a
+    /// tiny instance constrained to the virtual's bounds. Tearing the virtual
+    /// down for the duration eliminates that surface; reconcile() short-circuits
+    /// while this is true so polling/event-driven recreates don't fight the
+    /// suspend.
+    private static var suspendedForLock = false
 
     /// True between create and the first verified-correct enforceVirtualPosition.
     /// The post-create menu-bar reset fires only once position is confirmed —
@@ -101,6 +111,129 @@ enum VirtualDisplay {
         ) { _ in
             reconcile()
         }
+
+        installLockObservers()
+    }
+
+    /// Subscribe to multiple "screen is about to be locked / screensaver is
+    /// about to start" signals so whichever fires first triggers the suspend.
+    /// All paths funnel into `suspendForLock(reason:)` which is idempotent.
+    /// Resume is symmetric: any unlock/didstop signal triggers `resumeAfterUnlock`.
+    ///
+    /// Why three suspend signals: testing on 2026-04-29 showed `loginwindow`
+    /// activation fires ~235ms before `com.apple.screenIsLocked`, which is
+    /// 235ms of head-start to tear down the virtual before macOS picks
+    /// per-display screensaver targets. `com.apple.screensaver.willstart`
+    /// (when present) is earlier still. Idempotent suspend means it's safe
+    /// to subscribe to all three and let whichever fires first do the work.
+    private static func installLockObservers() {
+        let dnc = DistributedNotificationCenter.default()
+        let suspendNames = [
+            "com.apple.screensaver.willstart",
+            "com.apple.screenIsLocked",
+        ]
+        for name in suspendNames {
+            let obs = dnc.addObserver(
+                forName: NSNotification.Name(name),
+                object: nil,
+                queue: .main
+            ) { _ in
+                Self.suspendForLock(reason: name)
+            }
+            lockObservers.append(obs)
+        }
+        let resumeNames = [
+            "com.apple.screensaver.didstop",
+            "com.apple.screenIsUnlocked",
+        ]
+        for name in resumeNames {
+            let obs = dnc.addObserver(
+                forName: NSNotification.Name(name),
+                object: nil,
+                queue: .main
+            ) { _ in
+                Self.resumeAfterUnlock(reason: name)
+            }
+            lockObservers.append(obs)
+        }
+
+        // NSWorkspace activation of com.apple.loginwindow is the earliest
+        // signal observed in practice (2026-04-29 test: 235ms before
+        // screenIsLocked). Filter on bundle ID so other app activations
+        // don't churn through the suspend path.
+        let workspaceObs = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                app.bundleIdentifier == "com.apple.loginwindow"
+            else { return }
+            Self.suspendForLock(reason: "loginwindow.activated")
+        }
+        lockObservers.append(workspaceObs)
+    }
+
+    /// Park the virtual display before the screensaver / lock screen can pick
+    /// it as a render target. Idempotent — repeated calls while already
+    /// suspended are no-ops.
+    ///
+    /// **Why park, not destroy.** The first cut of this path destroyed the
+    /// virtual (commit pending). Verified 2026-04-29: that produces a black
+    /// screen for the entire screensaver duration when Flurry is the active
+    /// screensaver. Flurry is OpenGL-backed; if it picks the virtual's display
+    /// for its primary surface and we then remove that display from
+    /// NSScreen.screens during init, its GL context binds to a now-defunct
+    /// surface and never recovers — black render. Parking instead — moving
+    /// the virtual to (-32768, -32768) without releasing the
+    /// `CGVirtualDisplay` reference — keeps the display count stable so the
+    /// screensaver's display-pick is consistent end-to-end, while putting any
+    /// instance that lands on the virtual far enough off-screen that the user
+    /// never sees it.
+    private static func suspendForLock(reason: String) {
+        if suspendedForLock { return }
+        suspendedForLock = true
+        aslog("VirtualDisplay.suspendForLock(\(reason))")
+        parkVirtual()
+    }
+
+    /// Move the virtual to (-32768, -32768). Display stays in NSScreen.screens
+    /// at its current size, so anything that picks displays at this moment
+    /// gets a stable list — the virtual's instance is just unreachable.
+    private static func parkVirtual() {
+        guard VirtualDisplayHelper.isCreated() else { return }
+        if destroyInFlight {
+            aslog("parkVirtual: destroy in flight, skipping")
+            return
+        }
+        let virtualID = VirtualDisplayHelper.displayID()
+        guard virtualID != 0 else { return }
+        var config: CGDisplayConfigRef?
+        let begin = CGBeginDisplayConfiguration(&config)
+        guard begin == .success, let config else {
+            aslog("parkVirtual: CGBeginDisplayConfiguration failed: \(begin.rawValue)")
+            return
+        }
+        CGConfigureDisplayOrigin(config, virtualID, -32768, -32768)
+        let complete = CGCompleteDisplayConfiguration(config, .forSession)
+        aslog("parkVirtual: relocated to (-32768,-32768) → \(complete.rawValue)")
+        updateCursorFence(nil)
+    }
+
+    /// Clear the suspend flag and reconcile. The reconcile pass takes care of
+    /// the unpark via `enforceVirtualPosition`, which sees the parked origin
+    /// drifted from expected right-of-main and re-applies. If displays were
+    /// changed during the lock (e.g. an external was unplugged), reconcile
+    /// also handles the create/destroy transition. Enforce attempt counters
+    /// are reset so the unpark gets a fresh 5-attempt budget.
+    private static func resumeAfterUnlock(reason: String) {
+        if !suspendedForLock { return }
+        suspendedForLock = false
+        aslog("VirtualDisplay.resumeAfterUnlock(\(reason))")
+        enforceAttemptCount = 0
+        lastEnforceAttempt = nil
+        reconcile()
     }
 
     /// Install the cursor-fence CGEventTap. Cheap to leave permanently
@@ -168,6 +301,13 @@ enum VirtualDisplay {
             NotificationCenter.default.removeObserver(observer)
             screenObserver = nil
         }
+        let dnc = DistributedNotificationCenter.default()
+        let wnc = NSWorkspace.shared.notificationCenter
+        for observer in lockObservers {
+            dnc.removeObserver(observer)
+            wnc.removeObserver(observer)
+        }
+        lockObservers.removeAll()
         if VirtualDisplayHelper.isCreated() {
             VirtualDisplayHelper.destroy()
         }
@@ -177,6 +317,10 @@ enum VirtualDisplay {
 
     /// Match the virtual display's presence to whether it's currently needed.
     private static func reconcile() {
+        if suspendedForLock {
+            aslog("VirtualDisplay.reconcile: suspended for lock — skipping")
+            return
+        }
         let realCount = physicalDisplayCount()
         let haveVirtual = VirtualDisplayHelper.isCreated()
         let needVirtual = realCount <= 1
