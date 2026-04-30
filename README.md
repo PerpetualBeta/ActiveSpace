@@ -7,6 +7,7 @@ A macOS menu-bar app that shows your current Mission Control space and switches 
 - **Numbered bubble in the menu bar** showing the current space; updates live whether you switch by ActiveSpace, Mission Control, or trackpad gesture.
 - **Click to switch.** With two spaces a left-click toggles between them; with three or more it opens a popover with numbered buttons; with one space the icon is just an indicator.
 - **Configurable keyboard shortcuts** for next/previous space, with wrap-around.
+- **Optional grid layout.** Tell ActiveSpace your conceptual row width — say, 4 if you keep 8 spaces and think of them as 4×2 — and the popover reflows into rows of that width. Two extra hotkeys, **Space Up** and **Space Down**, navigate ±rowWidth with column-cycling wrap (so `Space Down` from the bottom row wraps to the top of the same column). Set row width to 0 to keep the original linear strip.
 - **Instant transitions.** No animation, no sliding, no wait — across single-display, dual-display, lid-open, and lid-closed configurations.
 - **Optional space-aware Cmd-Tab Switcher** (off by default). When on, `Cmd-Tab` shows only apps with windows on the current space — including minimised windows and windows of hidden apps. Cycle with `Tab` or arrows, reverse with `Shift-Tab`, commit by releasing `Cmd` or pressing `Return`, cancel with `Esc`. When off, native `Cmd-Tab` is completely untouched.
 
@@ -23,8 +24,9 @@ Launch ActiveSpace from `/Applications` and grant Accessibility and Input Monito
 
 Right-click the menu-bar bubble and choose **Settings…**:
 
-- **Keyboard shortcuts** — Next Space and Previous Space hotkeys.
+- **Keyboard shortcuts** — Next Space and Previous Space hotkeys (plus Space Up and Space Down when grid layout is enabled).
 - **Switcher** — toggle the space-aware Cmd-Tab replacement.
+- **Grid** — optional row width for the popover layout and the Space Up / Space Down hotkeys.
 - **Permissions** — live status of Accessibility and Input Monitoring with grant buttons.
 - **Launch at Login** — start automatically.
 - **Auto-update** — schedule + optional automatic install.
@@ -36,7 +38,7 @@ Two are required, both manageable from Settings:
 - **Accessibility** — required for space switching. macOS prompts on first launch.
 - **Input Monitoring** — required for keyboard shortcuts and the Switcher. If not granted, ActiveSpace shows an alert with a direct link to the correct System Settings pane.
 
-To avoid conflicts with macOS's built-in shortcuts, disable `Control-←` and `Control-→` in System Settings → Keyboard → Keyboard Shortcuts → Mission Control.
+To avoid conflicts with macOS's built-in shortcuts, disable `Control-←` and `Control-→` (and `Control-↑` / `Control-↓` if you bind those to Space Up / Space Down) in System Settings → Keyboard → Keyboard Shortcuts → Mission Control.
 
 ## How it works
 
