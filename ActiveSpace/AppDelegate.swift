@@ -480,128 +480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateChecker: updateChecker
         ) { [weak self] in
             guard let delegate = self else { return EmptyView().eraseToAnyView() }
-            return Group {
-                Section("Switcher") {
-                    Toggle("Space-aware Command-Tab", isOn: Binding(
-                        get: { delegate.switcherEnabled },
-                        set: { delegate.switcherEnabled = $0; delegate.saveSwitcherEnabled() }
-                    ))
-                    Text("Replaces native Command-Tab with a switcher that only shows apps with windows on the current space. Requires Accessibility (see Permissions below).")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Grid") {
-                    Stepper(value: Binding(
-                        get: { delegate.rowWidth },
-                        set: { delegate.rowWidth = $0; delegate.saveRowWidth() }
-                    ), in: 0...12) {
-                        Text(delegate.rowWidth == 0
-                             ? "Row width: linear"
-                             : "Row width: \(delegate.rowWidth) per row")
-                    }
-                    Text("Lay out the popover as a grid of this width and enable Space Up / Space Down keyboard shortcuts. Set to 0 for the original linear strip.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Keyboard Shortcuts") {
-                    JorvikShortcutRecorder(
-                        label: "Previous Space",
-                        keyCode: Binding(
-                            get: { delegate.prevKeyCode },
-                            set: { delegate.prevKeyCode = $0 }
-                        ),
-                        modifiers: Binding(
-                            get: { delegate.prevModifiers },
-                            set: { delegate.prevModifiers = $0 }
-                        ),
-                        displayString: { delegate.prevShortcutDisplayString() },
-                        onChanged: { delegate.saveShortcuts() },
-                        eventTapToDisable: delegate.currentEventTap
-                    )
-                    JorvikShortcutRecorder(
-                        label: "Next Space",
-                        keyCode: Binding(
-                            get: { delegate.nextKeyCode },
-                            set: { delegate.nextKeyCode = $0 }
-                        ),
-                        modifiers: Binding(
-                            get: { delegate.nextModifiers },
-                            set: { delegate.nextModifiers = $0 }
-                        ),
-                        displayString: { delegate.nextShortcutDisplayString() },
-                        onChanged: { delegate.saveShortcuts() },
-                        eventTapToDisable: delegate.currentEventTap
-                    )
-
-                    if delegate.rowWidth >= 2 {
-                        JorvikShortcutRecorder(
-                            label: "Space Up",
-                            keyCode: Binding(
-                                get: { delegate.upKeyCode },
-                                set: { delegate.upKeyCode = $0 }
-                            ),
-                            modifiers: Binding(
-                                get: { delegate.upModifiers },
-                                set: { delegate.upModifiers = $0 }
-                            ),
-                            displayString: { delegate.upShortcutDisplayString() },
-                            onChanged: { delegate.saveShortcuts() },
-                            eventTapToDisable: delegate.currentEventTap
-                        )
-                        JorvikShortcutRecorder(
-                            label: "Space Down",
-                            keyCode: Binding(
-                                get: { delegate.downKeyCode },
-                                set: { delegate.downKeyCode = $0 }
-                            ),
-                            modifiers: Binding(
-                                get: { delegate.downModifiers },
-                                set: { delegate.downModifiers = $0 }
-                            ),
-                            displayString: { delegate.downShortcutDisplayString() },
-                            onChanged: { delegate.saveShortcuts() },
-                            eventTapToDisable: delegate.currentEventTap
-                        )
-                    }
-
-                    Text("To avoid conflicts, disable the matching shortcuts in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Permissions") {
-                    HStack {
-                        Text("Accessibility")
-                        Spacer()
-                        if AXIsProcessTrusted() {
-                            Label("Granted", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                                .font(.caption)
-                        } else {
-                            Button("Grant Access") {
-                                SpaceSwitcher.ensureAccessibility()
-                            }
-                            .font(.caption)
-                        }
-                    }
-                    HStack {
-                        Text("Input Monitoring")
-                        Spacer()
-                        if _eventTap != nil {
-                            Label("Granted", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                                .font(.caption)
-                        } else {
-                            Button("Grant Access") {
-                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
-                            }
-                            .font(.caption)
-                        }
-                    }
-                }
-            }.eraseToAnyView()
+            return ActiveSpaceSettingsContent(delegate: delegate).eraseToAnyView()
         }
     }
 
@@ -628,4 +507,148 @@ private extension NSEvent.ModifierFlags {
 
 private extension View {
     func eraseToAnyView() -> AnyView { AnyView(self) }
+}
+
+// MARK: - Settings content
+
+/// All ActiveSpace-specific Settings sections, hosted as a single SwiftUI
+/// view so that `@State rowWidth` drives both the Stepper's label *and* the
+/// conditional disclosure of the Space Up / Space Down shortcut recorders.
+/// AppDelegate is not @ObservableObject, so without consolidating the
+/// settings UI here, the closure passed to `JorvikSettingsView` would have
+/// no way to react to changes.
+private struct ActiveSpaceSettingsContent: View {
+
+    let delegate: AppDelegate
+    @State private var rowWidth: Int
+
+    init(delegate: AppDelegate) {
+        self.delegate = delegate
+        self._rowWidth = State(initialValue: delegate.rowWidth)
+    }
+
+    var body: some View {
+        Group {
+            Section("Switcher") {
+                Toggle("Space-aware Command-Tab", isOn: Binding(
+                    get: { delegate.switcherEnabled },
+                    set: { delegate.switcherEnabled = $0; delegate.saveSwitcherEnabled() }
+                ))
+                Text("Replaces native Command-Tab with a switcher that only shows apps with windows on the current space. Requires Accessibility (see Permissions below).")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Grid") {
+                Stepper(value: $rowWidth, in: 0...12) {
+                    Text(rowWidth == 0 ? "Row width: linear"
+                                       : "Row width: \(rowWidth) per row")
+                }
+                .onChange(of: rowWidth) { _, newValue in
+                    delegate.rowWidth = newValue
+                    delegate.saveRowWidth()
+                }
+                Text("Lay out the popover as a grid of this width and enable Space Up / Space Down keyboard shortcuts. Set to 0 for the original linear strip.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Keyboard Shortcuts") {
+                JorvikShortcutRecorder(
+                    label: "Previous Space",
+                    keyCode: Binding(
+                        get: { delegate.prevKeyCode },
+                        set: { delegate.prevKeyCode = $0 }
+                    ),
+                    modifiers: Binding(
+                        get: { delegate.prevModifiers },
+                        set: { delegate.prevModifiers = $0 }
+                    ),
+                    displayString: { delegate.prevShortcutDisplayString() },
+                    onChanged: { delegate.saveShortcuts() },
+                    eventTapToDisable: delegate.currentEventTap
+                )
+                JorvikShortcutRecorder(
+                    label: "Next Space",
+                    keyCode: Binding(
+                        get: { delegate.nextKeyCode },
+                        set: { delegate.nextKeyCode = $0 }
+                    ),
+                    modifiers: Binding(
+                        get: { delegate.nextModifiers },
+                        set: { delegate.nextModifiers = $0 }
+                    ),
+                    displayString: { delegate.nextShortcutDisplayString() },
+                    onChanged: { delegate.saveShortcuts() },
+                    eventTapToDisable: delegate.currentEventTap
+                )
+
+                if rowWidth >= 2 {
+                    JorvikShortcutRecorder(
+                        label: "Space Up",
+                        keyCode: Binding(
+                            get: { delegate.upKeyCode },
+                            set: { delegate.upKeyCode = $0 }
+                        ),
+                        modifiers: Binding(
+                            get: { delegate.upModifiers },
+                            set: { delegate.upModifiers = $0 }
+                        ),
+                        displayString: { delegate.upShortcutDisplayString() },
+                        onChanged: { delegate.saveShortcuts() },
+                        eventTapToDisable: delegate.currentEventTap
+                    )
+                    JorvikShortcutRecorder(
+                        label: "Space Down",
+                        keyCode: Binding(
+                            get: { delegate.downKeyCode },
+                            set: { delegate.downKeyCode = $0 }
+                        ),
+                        modifiers: Binding(
+                            get: { delegate.downModifiers },
+                            set: { delegate.downModifiers = $0 }
+                        ),
+                        displayString: { delegate.downShortcutDisplayString() },
+                        onChanged: { delegate.saveShortcuts() },
+                        eventTapToDisable: delegate.currentEventTap
+                    )
+                }
+
+                Text("To avoid conflicts, disable the matching shortcuts in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Permissions") {
+                HStack {
+                    Text("Accessibility")
+                    Spacer()
+                    if AXIsProcessTrusted() {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    } else {
+                        Button("Grant Access") {
+                            SpaceSwitcher.ensureAccessibility()
+                        }
+                        .font(.caption)
+                    }
+                }
+                HStack {
+                    Text("Input Monitoring")
+                    Spacer()
+                    if delegate.currentEventTap != nil {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    } else {
+                        Button("Grant Access") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
+                        }
+                        .font(.caption)
+                    }
+                }
+            }
+        }
+    }
 }
