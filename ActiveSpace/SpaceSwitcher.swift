@@ -78,6 +78,42 @@ enum SpaceSwitcher {
         switchNext(observer: observer)
     }
 
+    /// Move one "row" up in the conceptual grid (current − rowWidth), with
+    /// column-cycling wrap. No-op when grid mode is inactive
+    /// (rowWidth < 2 or totalSpaces ≤ rowWidth).
+    static func switchUp(rowWidth: Int, observer: SpaceObserver) {
+        step(direction: -1, rowWidth: rowWidth, observer: observer)
+    }
+
+    /// Move one row down (current + rowWidth), with column-cycling wrap.
+    /// No-op when grid mode is inactive.
+    static func switchDown(rowWidth: Int, observer: SpaceObserver) {
+        step(direction: 1, rowWidth: rowWidth, observer: observer)
+    }
+
+    /// Column-cycling navigation. The user thinks of spaces as a grid of
+    /// `rowWidth` columns; this moves through column N independently of
+    /// other columns. With a partial last row, columns past the partial-row
+    /// edge have only one row each, so up/down on those columns no-ops.
+    private static func step(direction: Int, rowWidth: Int, observer: SpaceObserver) {
+        observer.refresh()
+        let total = observer.totalSpaces
+        guard rowWidth >= 2, total > rowWidth else {
+            aslog("step(\(direction)): grid inactive (rowWidth=\(rowWidth) total=\(total)) — ignoring")
+            return
+        }
+        let current = observer.currentSpaceIndex          // 1-based
+        let column  = (current - 1) % rowWidth
+        let row     = (current - 1) / rowWidth
+        let rowsInColumn = (total - column - 1) / rowWidth + 1
+        let newRow = ((row + direction) % rowsInColumn + rowsInColumn) % rowsInColumn
+        let target = column + newRow * rowWidth + 1
+        aslog("step(\(direction)): current=\(current) col=\(column) row=\(row) rowsInCol=\(rowsInColumn) → target=\(target)")
+        if target != current {
+            switchTo(index: target, observer: observer)
+        }
+    }
+
     // MARK: - Single-display path (direct API)
 
     private static func directSwitch(to target: SpaceInfo, from current: SpaceInfo?) {

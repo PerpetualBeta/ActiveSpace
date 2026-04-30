@@ -10,10 +10,15 @@ private var _nextKeyCode: UInt16 = 0
 private var _nextModifiers: CGEventFlags = []
 private var _prevKeyCode: UInt16 = 0
 private var _prevModifiers: CGEventFlags = []
+private var _upKeyCode: UInt16 = 0
+private var _upModifiers: CGEventFlags = []
+private var _downKeyCode: UInt16 = 0
+private var _downModifiers: CGEventFlags = []
+private var _rowWidth: Int = 0
 private var _switcherEnabled: Bool = false
 
 /// Action dispatched from the tap callback back to the main thread.
-private enum HotkeyAction { case next, prev }
+private enum HotkeyAction { case next, prev, up, down }
 private var _hotkeyAction: HotkeyAction?
 
 /// The mask of modifier flags we care about when matching shortcuts.
@@ -44,6 +49,17 @@ private func hotkeyTapCallback(
         }
         if _prevKeyCode != 0 && keyCode == _prevKeyCode && modFlags == _prevModifiers {
             DispatchQueue.main.async { _hotkeyAction = .prev; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
+            return nil
+        }
+        // Up/Down only intercept when grid mode is active. If the user has a
+        // binding from a previous session but turned grid off, we let the
+        // keystroke flow through to the system rather than silently no-op'ing.
+        if _rowWidth >= 2 && _upKeyCode != 0 && keyCode == _upKeyCode && modFlags == _upModifiers {
+            DispatchQueue.main.async { _hotkeyAction = .up; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
+            return nil
+        }
+        if _rowWidth >= 2 && _downKeyCode != 0 && keyCode == _downKeyCode && modFlags == _downModifiers {
+            DispatchQueue.main.async { _hotkeyAction = .down; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
             return nil
         }
         if _switcherEnabled,
@@ -101,6 +117,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var nextModifiers: NSEvent.ModifierFlags = [] { didSet { _nextModifiers = nextModifiers.cgEventFlags } }
     var prevKeyCode: UInt16 = 0   { didSet { _prevKeyCode = prevKeyCode } }
     var prevModifiers: NSEvent.ModifierFlags = [] { didSet { _prevModifiers = prevModifiers.cgEventFlags } }
+    var upKeyCode: UInt16 = 0     { didSet { _upKeyCode = upKeyCode } }
+    var upModifiers: NSEvent.ModifierFlags = [] { didSet { _upModifiers = upModifiers.cgEventFlags } }
+    var downKeyCode: UInt16 = 0   { didSet { _downKeyCode = downKeyCode } }
+    var downModifiers: NSEvent.ModifierFlags = [] { didSet { _downModifiers = downModifiers.cgEventFlags } }
+
+    /// Conceptual grid row width. 0 = linear (default), ≥2 = grid mode active.
+    /// Drives the popover layout and gates the Space Up / Space Down hotkeys.
+    var rowWidth: Int = 0 { didSet { _rowWidth = rowWidth } }
 
     var switcherEnabled: Bool = false {
         didSet {
@@ -294,6 +318,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch action {
         case .next: SpaceSwitcher.switchNext(observer: observer)
         case .prev: SpaceSwitcher.switchPrev(observer: observer)
+        case .up:   SpaceSwitcher.switchUp(rowWidth: rowWidth, observer: observer)
+        case .down: SpaceSwitcher.switchDown(rowWidth: rowWidth, observer: observer)
         }
     }
 
@@ -313,6 +339,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             prevKeyCode = UInt16(pk)
             prevModifiers = NSEvent.ModifierFlags(rawValue: UInt(pm))
         }
+        let uk = d.integer(forKey: "upSpaceKeyCode")
+        let um = d.integer(forKey: "upSpaceModifiers")
+        if uk != 0 && um != 0 {
+            upKeyCode = UInt16(uk)
+            upModifiers = NSEvent.ModifierFlags(rawValue: UInt(um))
+        }
+        let dk = d.integer(forKey: "downSpaceKeyCode")
+        let dm = d.integer(forKey: "downSpaceModifiers")
+        if dk != 0 && dm != 0 {
+            downKeyCode = UInt16(dk)
+            downModifiers = NSEvent.ModifierFlags(rawValue: UInt(dm))
+        }
+        rowWidth = d.integer(forKey: "rowWidth")           // 0 if absent
         switcherEnabled = d.bool(forKey: "switcherEnabled")
     }
 
@@ -322,6 +361,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         d.set(Int(nextModifiers.rawValue), forKey: "nextSpaceModifiers")
         d.set(Int(prevKeyCode), forKey: "prevSpaceKeyCode")
         d.set(Int(prevModifiers.rawValue), forKey: "prevSpaceModifiers")
+        d.set(Int(upKeyCode), forKey: "upSpaceKeyCode")
+        d.set(Int(upModifiers.rawValue), forKey: "upSpaceModifiers")
+        d.set(Int(downKeyCode), forKey: "downSpaceKeyCode")
+        d.set(Int(downModifiers.rawValue), forKey: "downSpaceModifiers")
+    }
+
+    func saveRowWidth() {
+        UserDefaults.standard.set(rowWidth, forKey: "rowWidth")
     }
 
     func saveSwitcherEnabled() {
@@ -336,6 +383,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func prevShortcutDisplayString() -> String {
         guard prevKeyCode != 0 else { return "Not set" }
         return JorvikShortcutPanel.displayString(keyCode: prevKeyCode, modifiers: prevModifiers)
+    }
+
+    func upShortcutDisplayString() -> String {
+        guard upKeyCode != 0 else { return "Not set" }
+        return JorvikShortcutPanel.displayString(keyCode: upKeyCode, modifiers: upModifiers)
+    }
+
+    func downShortcutDisplayString() -> String {
+        guard downKeyCode != 0 else { return "Not set" }
+        return JorvikShortcutPanel.displayString(keyCode: downKeyCode, modifiers: downModifiers)
     }
 
     // MARK: - Click handling
@@ -368,7 +425,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         p.behavior = .transient
         p.animates = true
         p.contentViewController = NSHostingController(
-            rootView: SpaceSelectorView(observer: observer) { [weak self, weak p] index in
+            rootView: SpaceSelectorView(observer: observer, rowWidth: rowWidth) { [weak self, weak p] index in
                 p?.performClose(nil)
                 guard let self else { return }
                 SpaceSwitcher.switchTo(index: index, observer: self.observer)
@@ -434,6 +491,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("Grid") {
+                    Stepper(value: Binding(
+                        get: { delegate.rowWidth },
+                        set: { delegate.rowWidth = $0; delegate.saveRowWidth() }
+                    ), in: 0...12) {
+                        Text(delegate.rowWidth == 0
+                             ? "Row width: linear"
+                             : "Row width: \(delegate.rowWidth) per row")
+                    }
+                    Text("Lay out the popover as a grid of this width and enable Space Up / Space Down keyboard shortcuts. Set to 0 for the original linear strip.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Keyboard Shortcuts") {
                     JorvikShortcutRecorder(
                         label: "Previous Space",
@@ -463,6 +534,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         onChanged: { delegate.saveShortcuts() },
                         eventTapToDisable: delegate.currentEventTap
                     )
+
+                    if delegate.rowWidth >= 2 {
+                        JorvikShortcutRecorder(
+                            label: "Space Up",
+                            keyCode: Binding(
+                                get: { delegate.upKeyCode },
+                                set: { delegate.upKeyCode = $0 }
+                            ),
+                            modifiers: Binding(
+                                get: { delegate.upModifiers },
+                                set: { delegate.upModifiers = $0 }
+                            ),
+                            displayString: { delegate.upShortcutDisplayString() },
+                            onChanged: { delegate.saveShortcuts() },
+                            eventTapToDisable: delegate.currentEventTap
+                        )
+                        JorvikShortcutRecorder(
+                            label: "Space Down",
+                            keyCode: Binding(
+                                get: { delegate.downKeyCode },
+                                set: { delegate.downKeyCode = $0 }
+                            ),
+                            modifiers: Binding(
+                                get: { delegate.downModifiers },
+                                set: { delegate.downModifiers = $0 }
+                            ),
+                            displayString: { delegate.downShortcutDisplayString() },
+                            onChanged: { delegate.saveShortcuts() },
+                            eventTapToDisable: delegate.currentEventTap
+                        )
+                    }
 
                     Text("To avoid conflicts, disable the matching shortcuts in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control.")
                         .font(.caption2)
