@@ -136,13 +136,29 @@ static CGDirectDisplayID _virtualDisplayID = 0;
     [desc setValue:[NSValue valueWithSize:NSMakeSize(169, 127)] forKey:@"sizeInMillimeters"];
     [desc setValue:dispatch_get_main_queue() forKey:@"queue"];
 
-    // Create virtual display
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    id display = [[CGVirtualDisplay alloc] performSelector:NSSelectorFromString(@"initWithDescriptor:") withObject:desc];
-#pragma clang diagnostic pop
+    // Create virtual display via NSInvocation. The previous
+    // [[CGVirtualDisplay alloc] performSelector:@selector(initWithDescriptor:) ...]
+    // pattern crashed under ARC: performSelector isn't recognised as
+    // init-family, so ARC inserts an objc_release of the alloc temp at
+    // end-of-statement, but initWithDescriptor: has already consumed
+    // self — the release then runs on a freed object. Manifested as
+    // SIGSEGV in objc_release inside +create, raised from the Dock
+    // notification observer (2026-05-01 startup crash).
+    SEL initDescSel = NSSelectorFromString(@"initWithDescriptor:");
+    NSMethodSignature *initDescSig = [CGVirtualDisplay instanceMethodSignatureForSelector:initDescSel];
+    if (!initDescSig) {
+        ASLog(@"CGVirtualDisplay has no initWithDescriptor:");
+        return nil;
+    }
+    NSInvocation *initDescInv = [NSInvocation invocationWithMethodSignature:initDescSig];
+    initDescInv.selector = initDescSel;
+    [initDescInv setArgument:&desc atIndex:2];
+    id display = [CGVirtualDisplay alloc];
+    [initDescInv invokeWithTarget:display];
+    __unsafe_unretained id initResult;
+    [initDescInv getReturnValue:&initResult];
 
-    if (!display) {
+    if (!initResult) {
         ASLog(@"Failed to create virtual display");
         return nil;
     }
