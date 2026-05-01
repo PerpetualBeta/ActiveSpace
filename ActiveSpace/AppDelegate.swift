@@ -159,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         SpaceSwitcher.ensureAccessibility()
         loadShortcuts()
+        republishHotkeys()
         setupEventTap()
 
         VirtualDisplay.startManaging()
@@ -365,6 +366,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         d.set(Int(upModifiers.rawValue), forKey: "upSpaceModifiers")
         d.set(Int(downKeyCode), forKey: "downSpaceKeyCode")
         d.set(Int(downModifiers.rawValue), forKey: "downSpaceModifiers")
+        republishHotkeys()
+    }
+
+    /// Push the four space-switch bindings to the JorvikKit registry so
+    /// ShortcutHUD can list them. Only emits entries the user has actually
+    /// bound (keyCode != 0).
+    func republishHotkeys() {
+        var hotkeys: [JorvikHotkey] = []
+        if nextKeyCode != 0 {
+            hotkeys.append(JorvikHotkey(actionTitle: "Next Space",
+                                        keyCode: nextKeyCode,
+                                        modifiers: nextModifiers,
+                                        activeContext: .anywhere))
+        }
+        if prevKeyCode != 0 {
+            hotkeys.append(JorvikHotkey(actionTitle: "Previous Space",
+                                        keyCode: prevKeyCode,
+                                        modifiers: prevModifiers,
+                                        activeContext: .anywhere))
+        }
+        if upKeyCode != 0 {
+            hotkeys.append(JorvikHotkey(actionTitle: "Space Up",
+                                        keyCode: upKeyCode,
+                                        modifiers: upModifiers,
+                                        activeContext: .anywhere))
+        }
+        if downKeyCode != 0 {
+            hotkeys.append(JorvikHotkey(actionTitle: "Space Down",
+                                        keyCode: downKeyCode,
+                                        modifiers: downModifiers,
+                                        activeContext: .anywhere))
+        }
+        JorvikHotkeyRegistry.publish(hotkeys)
     }
 
     func saveRowWidth() {
