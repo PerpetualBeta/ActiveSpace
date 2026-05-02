@@ -51,26 +51,54 @@ enum SpaceSwitcher {
         }
     }
 
-    /// Move to the next space, wrapping from last → first.
-    static func switchNext(observer: SpaceObserver) {
-        observer.refresh()
-        let total = observer.totalSpaces
-        guard total > 1 else { return }
-        let current = observer.currentSpaceIndex
-        let target = current < total ? current + 1 : 1
-        aslog("switchNext: current=\(current) total=\(total) → target=\(target)")
-        switchTo(index: target, observer: observer)
+    /// Move to the next space.
+    ///
+    /// - Linear mode (`rowWidth < 2` or `total ≤ rowWidth`): wraps last → first
+    ///   across the whole list.
+    /// - Grid mode: wraps within the current row. Next from the last column of
+    ///   row N goes to the first column of row N, never crossing into row N+1.
+    ///   Symmetric with `switchUp`/`switchDown` (which cycle within columns).
+    static func switchNext(rowWidth: Int = 0, observer: SpaceObserver) {
+        horizontalStep(direction: 1, rowWidth: rowWidth, observer: observer)
     }
 
-    /// Move to the previous space, wrapping from first → last.
-    static func switchPrev(observer: SpaceObserver) {
+    /// Move to the previous space; same wrap semantics as `switchNext`.
+    static func switchPrev(rowWidth: Int = 0, observer: SpaceObserver) {
+        horizontalStep(direction: -1, rowWidth: rowWidth, observer: observer)
+    }
+
+    /// Linear or row-cycling step. Partial last rows are handled — e.g. with
+    /// total=6, rowWidth=4 the second row contains only spaces 5 and 6, so
+    /// Next from 6 wraps to 5 and Prev from 5 wraps to 6.
+    private static func horizontalStep(direction: Int, rowWidth: Int, observer: SpaceObserver) {
         observer.refresh()
         let total = observer.totalSpaces
         guard total > 1 else { return }
-        let current = observer.currentSpaceIndex
-        let target = current > 1 ? current - 1 : total
-        aslog("switchPrev: current=\(current) total=\(total) → target=\(target)")
-        switchTo(index: target, observer: observer)
+        let current = observer.currentSpaceIndex   // 1-based
+
+        let target: Int
+        if rowWidth >= 2 && total > rowWidth {
+            // Grid mode: wrap within current row.
+            let row = (current - 1) / rowWidth
+            let rowStart = row * rowWidth + 1
+            let rowEnd = min(rowStart + rowWidth - 1, total)
+            let rowSize = rowEnd - rowStart + 1
+            let column = current - rowStart           // 0-based within row
+            let newColumn = ((column + direction) % rowSize + rowSize) % rowSize
+            target = rowStart + newColumn
+        } else {
+            // Linear mode: wrap across the whole list.
+            if direction > 0 {
+                target = current < total ? current + 1 : 1
+            } else {
+                target = current > 1 ? current - 1 : total
+            }
+        }
+
+        aslog("horizontalStep(\(direction)): current=\(current) total=\(total) rowWidth=\(rowWidth) → target=\(target)")
+        if target != current {
+            switchTo(index: target, observer: observer)
+        }
     }
 
     /// Toggle between space 1 and 2 (legacy convenience).

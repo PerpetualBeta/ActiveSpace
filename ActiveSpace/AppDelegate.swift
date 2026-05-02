@@ -317,8 +317,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let action = _hotkeyAction else { return }
         _hotkeyAction = nil
         switch action {
-        case .next: SpaceSwitcher.switchNext(observer: observer)
-        case .prev: SpaceSwitcher.switchPrev(observer: observer)
+        case .next: SpaceSwitcher.switchNext(rowWidth: rowWidth, observer: observer)
+        case .prev: SpaceSwitcher.switchPrev(rowWidth: rowWidth, observer: observer)
         case .up:   SpaceSwitcher.switchUp(rowWidth: rowWidth, observer: observer)
         case .down: SpaceSwitcher.switchDown(rowWidth: rowWidth, observer: observer)
         }
@@ -441,7 +441,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if count <= 1 {
             return
         } else if count == 2 {
-            SpaceSwitcher.switchNext(observer: observer)
+            SpaceSwitcher.switchNext(rowWidth: rowWidth, observer: observer)
         } else {
             togglePopover(relativeTo: sender)
         }
