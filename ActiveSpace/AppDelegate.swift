@@ -146,14 +146,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         aslog("applicationDidFinishLaunching: NSScreen.screens.count=\(NSScreen.screens.count)")
         NSApp.setActivationPolicy(.accessory)
 
-        // Deploy the bundled MouseCatcher.app to /Applications/Utilities/ if
-        // missing or older than the embedded copy. Spotlight needs it at a
-        // top-level path; the helper bundle inside our Contents/Helpers/ isn't
-        // discoverable. Async so it doesn't block launch on first install
-        // while files copy across.
-        DispatchQueue.global(qos: .utility).async {
-            Self.deployMouseCatcher()
-        }
+        // Deploy the bundled MouseCatcher.app to /Applications/ if missing or
+        // older than the embedded copy. Spotlight needs it at a top-level
+        // path; the helper bundle inside our Contents/Helpers/ isn't
+        // discoverable. Synchronous (~50 ms file copy worst case) — async on
+        // a global queue raced the launchd handoff exit and didn't always
+        // get a chance to run.
+        Self.deployMouseCatcher()
 
         // Register the keep-alive agent on first launch so the app survives
         // crashes and respawns after self-restart on drift events. If this
@@ -276,10 +275,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - MouseCatcher self-deploy
 
     /// Mirrors the embedded `Contents/Helpers/MouseCatcher.app` to
-    /// `/Applications/Utilities/MouseCatcher.app` so Spotlight can find it.
-    /// Idempotent — skips when the deployed `CFBundleShortVersionString`
-    /// already matches the embedded one. Refuses to overwrite a foreign
-    /// bundle (different `CFBundleIdentifier`) at the same path.
+    /// `/Applications/MouseCatcher.app` so Spotlight can find it. Idempotent
+    /// — skips when the deployed `CFBundleShortVersionString` already
+    /// matches the embedded one. Refuses to overwrite a foreign bundle
+    /// (different `CFBundleIdentifier`) at the same path.
+    ///
+    /// Why `/Applications/` and not `/Applications/Utilities/`: the
+    /// `Utilities` subfolder is owned by `root:wheel` mode 755 — even
+    /// admin users can't write there without elevation. `/Applications/`
+    /// itself is `drwxrwxr-x root:admin`, so admin-group users can deploy
+    /// without an authorisation prompt. Sibling-of-ActiveSpace install also
+    /// matches every other Jorvik utility's location.
     static func deployMouseCatcher() {
         let embeddedURL = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers/MouseCatcher.app")
@@ -288,8 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let deployedURL = URL(fileURLWithPath: "/Applications/Utilities/MouseCatcher.app")
-        let utilitiesDir = deployedURL.deletingLastPathComponent()
+        let deployedURL = URL(fileURLWithPath: "/Applications/MouseCatcher.app")
         let embeddedID = readBundleString(at: embeddedURL, key: "CFBundleIdentifier")
         let embeddedVersion = readBundleString(at: embeddedURL, key: "CFBundleShortVersionString")
 
@@ -297,7 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let deployedID = readBundleString(at: deployedURL, key: "CFBundleIdentifier")
             let deployedVersion = readBundleString(at: deployedURL, key: "CFBundleShortVersionString")
             if deployedID != embeddedID {
-                aslog("MouseCatcher: existing /Applications/Utilities/MouseCatcher.app has bundle ID \(deployedID ?? "(unknown)") — refusing to overwrite")
+                aslog("MouseCatcher: existing /Applications/MouseCatcher.app has bundle ID \(deployedID ?? "(unknown)") — refusing to overwrite")
                 return
             }
             if deployedVersion == embeddedVersion {
@@ -307,7 +312,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
-            try FileManager.default.createDirectory(at: utilitiesDir, withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: deployedURL.path) {
                 try FileManager.default.removeItem(at: deployedURL)
             }
