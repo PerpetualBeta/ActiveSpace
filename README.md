@@ -75,6 +75,18 @@ The virtual display is created automatically when you have a single physical dis
 
 ActiveSpace uses an invisible virtual display on single-monitor configurations. Very rarely, a display reconfiguration can cause the Dock to migrate onto it. If that happens, right-click the bubble in the menu bar and choose **Quit** — your Dock will return immediately.
 
+## If your mouse pointer disappears
+
+The same invisible virtual display sits 6000pt off-screen to the right. ActiveSpace installs a cursor fence to keep the pointer out of that region, but a fast cursor throw during exactly the wrong moment (e.g. just after waking from screen lock, while the fence is briefly disarmed) can occasionally slip past — and once the cursor is on the off-screen virtual, it's invisible.
+
+To recover, run this one-liner in Terminal:
+
+```sh
+echo 'import CoreGraphics; CGWarpMouseCursorPosition(CGPoint(x: 200, y: 200))' | swift -
+```
+
+That forces the cursor to absolute coordinates (200, 200) on your main display, bypassing any display-edge confinement. The pointer reappears immediately near the top-left of the menu bar.
+
 ## Building
 
 ```bash
