@@ -27,7 +27,6 @@
 		AA000061 /* JorvikSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000071 /* JorvikSettingsView.swift */; };
 		AA000062 /* JorvikUpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000072 /* JorvikUpdateChecker.swift */; };
 		AA000063 /* JorvikMenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000073 /* JorvikMenuBuilder.swift */; };
-		AA000064 /* JorvikMenuBarPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000074 /* JorvikMenuBarPill.swift */; };
 		AA000065 /* JorvikWindowHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000075 /* JorvikWindowHelper.swift */; };
 		AA000066 /* JorvikShortcutRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000076 /* JorvikShortcutRecorder.swift */; };
 		AA000067 /* VirtualDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000077 /* VirtualDisplay.swift */; };
@@ -78,7 +77,6 @@
 		AA000071 /* JorvikSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikSettingsView.swift; sourceTree = "<group>"; };
 		AA000072 /* JorvikUpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikUpdateChecker.swift; sourceTree = "<group>"; };
 		AA000073 /* JorvikMenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikMenuBuilder.swift; sourceTree = "<group>"; };
-		AA000074 /* JorvikMenuBarPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikMenuBarPill.swift; sourceTree = "<group>"; };
 		AA000075 /* JorvikWindowHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikWindowHelper.swift; sourceTree = "<group>"; };
 		AA000076 /* JorvikShortcutRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikShortcutRecorder.swift; sourceTree = "<group>"; };
 		AA000077 /* VirtualDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplay.swift; sourceTree = "<group>"; };
@@ -173,7 +171,6 @@
 				AA000071 /* JorvikSettingsView.swift */,
 				AA000072 /* JorvikUpdateChecker.swift */,
 				AA000073 /* JorvikMenuBuilder.swift */,
-				AA000074 /* JorvikMenuBarPill.swift */,
 				AA000075 /* JorvikWindowHelper.swift */,
 				AA000076 /* JorvikShortcutRecorder.swift */,
 				AA000099 /* JorvikHotkeyRegistry.swift */,
@@ -291,7 +288,6 @@
 				AA000061 /* JorvikSettingsView.swift in Sources */,
 				AA000062 /* JorvikUpdateChecker.swift in Sources */,
 				AA000063 /* JorvikMenuBuilder.swift in Sources */,
-				AA000064 /* JorvikMenuBarPill.swift in Sources */,
 				AA000065 /* JorvikWindowHelper.swift in Sources */,
 				AA000066 /* JorvikShortcutRecorder.swift in Sources */,
 				AA000098 /* JorvikHotkeyRegistry.swift in Sources */,
