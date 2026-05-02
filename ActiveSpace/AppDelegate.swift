@@ -146,6 +146,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         aslog("applicationDidFinishLaunching: NSScreen.screens.count=\(NSScreen.screens.count)")
         NSApp.setActivationPolicy(.accessory)
 
+        // Deploy the bundled MouseCatcher.app to /Applications/Utilities/ if
+        // missing or older than the embedded copy. Spotlight needs it at a
+        // top-level path; the helper bundle inside our Contents/Helpers/ isn't
+        // discoverable. Async so it doesn't block launch on first install
+        // while files copy across.
+        DispatchQueue.global(qos: .utility).async {
+            Self.deployMouseCatcher()
+        }
+
         // Register the keep-alive agent on first launch so the app survives
         // crashes and respawns after self-restart on drift events. If this
         // process wasn't started by launchd (user double-clicked the .app),
@@ -262,6 +271,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("ActiveSpace: kickstart failed: \(error)")
         }
         NSApp.terminate(nil)
+    }
+
+    // MARK: - MouseCatcher self-deploy
+
+    /// Mirrors the embedded `Contents/Helpers/MouseCatcher.app` to
+    /// `/Applications/Utilities/MouseCatcher.app` so Spotlight can find it.
+    /// Idempotent — skips when the deployed `CFBundleShortVersionString`
+    /// already matches the embedded one. Refuses to overwrite a foreign
+    /// bundle (different `CFBundleIdentifier`) at the same path.
+    static func deployMouseCatcher() {
+        let embeddedURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers/MouseCatcher.app")
+        guard FileManager.default.fileExists(atPath: embeddedURL.path) else {
+            aslog("MouseCatcher: no embedded copy in this build, skipping deploy")
+            return
+        }
+
+        let deployedURL = URL(fileURLWithPath: "/Applications/Utilities/MouseCatcher.app")
+        let utilitiesDir = deployedURL.deletingLastPathComponent()
+        let embeddedID = readBundleString(at: embeddedURL, key: "CFBundleIdentifier")
+        let embeddedVersion = readBundleString(at: embeddedURL, key: "CFBundleShortVersionString")
+
+        if FileManager.default.fileExists(atPath: deployedURL.path) {
+            let deployedID = readBundleString(at: deployedURL, key: "CFBundleIdentifier")
+            let deployedVersion = readBundleString(at: deployedURL, key: "CFBundleShortVersionString")
+            if deployedID != embeddedID {
+                aslog("MouseCatcher: existing /Applications/Utilities/MouseCatcher.app has bundle ID \(deployedID ?? "(unknown)") — refusing to overwrite")
+                return
+            }
+            if deployedVersion == embeddedVersion {
+                return  // already current
+            }
+            aslog("MouseCatcher: updating deployed copy \(deployedVersion ?? "?") → \(embeddedVersion ?? "?")")
+        }
+
+        do {
+            try FileManager.default.createDirectory(at: utilitiesDir, withIntermediateDirectories: true)
+            if FileManager.default.fileExists(atPath: deployedURL.path) {
+                try FileManager.default.removeItem(at: deployedURL)
+            }
+            try FileManager.default.copyItem(at: embeddedURL, to: deployedURL)
+            aslog("MouseCatcher: deployed v\(embeddedVersion ?? "?") to \(deployedURL.path)")
+        } catch {
+            aslog("MouseCatcher: deploy failed: \(error.localizedDescription)")
+        }
+    }
+
+    private static func readBundleString(at bundleURL: URL, key: String) -> String? {
+        let plistURL = bundleURL.appendingPathComponent("Contents/Info.plist")
+        guard let data = try? Data(contentsOf: plistURL),
+              let raw = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let plist = raw as? [String: Any]
+        else { return nil }
+        return plist[key] as? String
     }
 
     // MARK: - Event tap

@@ -2,6 +2,7 @@
 *.app
 *.zip
 *.saver
+*.icns
 .build/
 build/
 _BuildOutput/

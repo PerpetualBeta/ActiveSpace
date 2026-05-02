@@ -30,7 +30,6 @@
 		AA000064 /* JorvikMenuBarPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000074 /* JorvikMenuBarPill.swift */; };
 		AA000065 /* JorvikWindowHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000075 /* JorvikWindowHelper.swift */; };
 		AA000066 /* JorvikShortcutRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000076 /* JorvikShortcutRecorder.swift */; };
-		AA000098 /* JorvikHotkeyRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000099 /* JorvikHotkeyRegistry.swift */; };
 		AA000067 /* VirtualDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000077 /* VirtualDisplay.swift */; };
 		AA000068 /* VirtualDisplayHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = AA000078 /* VirtualDisplayHelper.m */; };
 		AA000069 /* Logging.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000082 /* Logging.swift */; };
@@ -39,6 +38,7 @@
 		AA000093 /* SwitcherAppResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000092 /* SwitcherAppResolver.swift */; };
 		AA000095 /* SwitcherHUDWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000094 /* SwitcherHUDWindow.swift */; };
 		AA000097 /* SwitcherAppStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000096 /* SwitcherAppStack.swift */; };
+		AA000098 /* JorvikHotkeyRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000099 /* JorvikHotkeyRegistry.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -81,7 +81,6 @@
 		AA000074 /* JorvikMenuBarPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikMenuBarPill.swift; sourceTree = "<group>"; };
 		AA000075 /* JorvikWindowHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikWindowHelper.swift; sourceTree = "<group>"; };
 		AA000076 /* JorvikShortcutRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikShortcutRecorder.swift; sourceTree = "<group>"; };
-		AA000099 /* JorvikHotkeyRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikHotkeyRegistry.swift; sourceTree = "<group>"; };
 		AA000077 /* VirtualDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplay.swift; sourceTree = "<group>"; };
 		AA000078 /* VirtualDisplayHelper.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = VirtualDisplayHelper.m; sourceTree = "<group>"; };
 		AA000079 /* VirtualDisplayHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VirtualDisplayHelper.h; sourceTree = "<group>"; };
@@ -92,6 +91,7 @@
 		AA000092 /* SwitcherAppResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherAppResolver.swift; sourceTree = "<group>"; };
 		AA000094 /* SwitcherHUDWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherHUDWindow.swift; sourceTree = "<group>"; };
 		AA000096 /* SwitcherAppStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherAppStack.swift; sourceTree = "<group>"; };
+		AA000099 /* JorvikHotkeyRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikHotkeyRegistry.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -192,6 +192,7 @@
 				AA000015 /* Frameworks */,
 				AA000016 /* Resources */,
 				5EF0B3812F95386B00E097E2 /* CopyFiles */,
+				5E2FCBE32FA6B8D100DA38EE /* Embed MouseCatcher */,
 			);
 			buildRules = (
 			);
@@ -246,6 +247,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		5E2FCBE32FA6B8D100DA38EE /* Embed MouseCatcher */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed MouseCatcher";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "  # Build MouseCatcher (signed, hardened-runtime) and embed it inside\n  # ActiveSpace.app/Contents/Helpers/. Self-deploy on launch handles\n  # placing it at /Applications/Utilities/MouseCatcher.app.\n  \"${SRCROOT}/MouseCatcher/build.sh\"\n\n  mkdir -p \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers\"\n  rm -rf \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers/MouseCatcher.app\"\n  cp -R \"${SRCROOT}/MouseCatcher/MouseCatcher.app\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers/MouseCatcher.app\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		AA000014 /* Sources */ = {
@@ -325,7 +348,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -390,7 +413,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;

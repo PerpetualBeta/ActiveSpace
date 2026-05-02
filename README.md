@@ -79,13 +79,13 @@ ActiveSpace uses an invisible virtual display on single-monitor configurations. 
 
 The same invisible virtual display sits 6000pt off-screen to the right. ActiveSpace installs a cursor fence to keep the pointer out of that region, but a fast cursor throw during exactly the wrong moment (e.g. just after waking from screen lock, while the fence is briefly disarmed) can occasionally slip past — and once the cursor is on the off-screen virtual, it's invisible.
 
-To recover, run this one-liner in Terminal:
+ActiveSpace ships **MouseCatcher** for exactly this case — a tiny keyboard-only utility that warps the cursor back to the centre of your main display. Both apps install together; if you used the `.pkg`, MouseCatcher.app is already in `/Applications` alongside ActiveSpace.app. To recover the cursor:
 
-```sh
-echo 'import CoreGraphics; CGWarpMouseCursorPosition(CGPoint(x: 200, y: 200))' | swift -
-```
+1. Press <kbd>⌘&nbsp;Space</kbd> to open Spotlight
+2. Type **MouseCatcher**
+3. Press <kbd>Return</kbd>
 
-That forces the cursor to absolute coordinates (200, 200) on your main display, bypassing any display-edge confinement. The pointer reappears immediately near the top-left of the menu bar.
+The cursor reappears immediately near the centre of your main display. MouseCatcher does its one job and exits — no Dock flash, no menu-bar item, no UI.
 
 ## Building
 
