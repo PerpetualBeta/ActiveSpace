@@ -75,6 +75,13 @@ enum VirtualDisplay {
     private static let maxEnforceAttempts = 5
     private static let enforceMinInterval: TimeInterval = 0.5
 
+    /// Backoff counter for `startCursorFence` retries. `CGEvent.tapCreate`
+    /// can return nil at very early session start (Aqua up but the event-tap
+    /// subsystem not yet ready, observed on fresh boot). Without retry the
+    /// fence stays dead until next launch.
+    private static var fenceTapRetryAttempts = 0
+    private static let fenceTapMaxRetries = 8
+
     /// Set while the screen is locked / screensaver is running. macOS otherwise
     /// renders one of its per-display screensaver instances onto the 640×480
     /// virtual, where the user either sees nothing (it's invisible) or sees a
@@ -238,7 +245,9 @@ enum VirtualDisplay {
 
     /// Install the cursor-fence CGEventTap. Cheap to leave permanently
     /// installed: when `_cursorFenceVirtualRect` is nil (no virtual present)
-    /// the callback short-circuits on the first check.
+    /// the callback short-circuits on the first check. Retries with backoff
+    /// if `tapCreate` returns nil — observed at very early session start on
+    /// fresh boot when the event-tap subsystem isn't yet ready.
     private static func startCursorFence() {
         guard _cursorFenceTap == nil else { return }
         let mask: CGEventMask =
@@ -254,14 +263,28 @@ enum VirtualDisplay {
             callback: cursorFenceCallback,
             userInfo: nil
         ) else {
-            aslog("CursorFence: tapCreate failed")
+            fenceTapRetryAttempts += 1
+            if fenceTapRetryAttempts <= fenceTapMaxRetries {
+                let delay = min(4.0, 0.25 * pow(2.0, Double(fenceTapRetryAttempts - 1)))
+                aslog("CursorFence: tapCreate failed, retrying in \(delay)s (attempt \(fenceTapRetryAttempts)/\(fenceTapMaxRetries))")
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    Self.startCursorFence()
+                }
+            } else {
+                aslog("CursorFence: tapCreate failed permanently after \(fenceTapMaxRetries) attempts")
+            }
             return
         }
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         _cursorFenceTap = tap
+        fenceTapRetryAttempts = 0
         aslog("CursorFence: tap installed")
+        // If the tap came up after retries, the rect may already be set —
+        // sweep any cursor/window stranded during the install gap.
+        rescueCursorIfInsideVirtual()
+        rescueWindowsInsideVirtual()
     }
 
     /// Update the fence rect so the tap callback knows what region to block.
@@ -270,8 +293,106 @@ enum VirtualDisplay {
         _cursorFenceVirtualRect = rect
         if let rect {
             aslog("CursorFence: rect=\(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width))x\(Int(rect.height))")
+            // Whenever the rect is (re)set — fresh-boot create, post-unlock
+            // resume, display-change reconcile — sweep the cursor and any
+            // fully-stranded windows out of the virtual. The fence's tap
+            // only fires on mouseMoved/dragged, so anything that landed on
+            // the virtual without an event (cursor restored at login,
+            // window reopened on its last frame, etc.) needs an explicit
+            // rescue here. Idempotent — a no-op when nothing's on it.
+            rescueCursorIfInsideVirtual()
+            rescueWindowsInsideVirtual()
         } else {
             aslog("CursorFence: disabled")
+        }
+    }
+
+    /// Warp the cursor to the centre of the main display if it's currently
+    /// inside the virtual's rect. Mirrors MouseCatcher's logic but runs
+    /// automatically — recovers the cursor in cases where no mouseMoved
+    /// event will fire to trigger the fence.
+    private static func rescueCursorIfInsideVirtual() {
+        guard let rect = _cursorFenceVirtualRect else { return }
+        guard let loc = CGEvent(source: nil)?.location else { return }
+        guard rect.contains(loc) else { return }
+        let mainBounds = CGDisplayBounds(CGMainDisplayID())
+        let target = CGPoint(x: mainBounds.midX, y: mainBounds.midY)
+        aslog("rescueCursor: cursor at (\(Int(loc.x)),\(Int(loc.y))) inside virtual; warping to (\(Int(target.x)),\(Int(target.y)))")
+        _ = CGAssociateMouseAndMouseCursorPosition(1)
+        CGWarpMouseCursorPosition(target)
+    }
+
+    /// Move any window whose frame is fully inside the virtual's rect back
+    /// to the centre of main. Only rescues windows fully contained in the
+    /// virtual — windows that span main and virtual are left alone since
+    /// the user may have intentionally parked them at main's right edge.
+    /// Walks the on-screen CG list to find candidates, then resolves each
+    /// to its AXUIElement via `_AXUIElementGetWindow` so we can SetPosition.
+    private static func rescueWindowsInsideVirtual() {
+        guard let virtualRect = _cursorFenceVirtualRect else { return }
+        let mainBounds = CGDisplayBounds(CGMainDisplayID())
+
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return }
+
+        // Group candidate CGWindowIDs by owning PID so we make at most one
+        // AX enumeration per process.
+        var candidatesByPID: [pid_t: Set<CGWindowID>] = [:]
+        for window in windowList {
+            guard let layer = window[kCGWindowLayer as String] as? Int, layer == 0 else { continue }
+            guard let boundsDict = window[kCGWindowBounds as String] as? [String: Any] else { continue }
+            let x = (boundsDict["X"] as? NSNumber)?.doubleValue ?? 0
+            let y = (boundsDict["Y"] as? NSNumber)?.doubleValue ?? 0
+            let w = (boundsDict["Width"] as? NSNumber)?.doubleValue ?? 0
+            let h = (boundsDict["Height"] as? NSNumber)?.doubleValue ?? 0
+            guard w > 0, h > 0 else { continue }
+            let frame = CGRect(x: x, y: y, width: w, height: h)
+            guard virtualRect.contains(frame) else { continue }
+            guard let pid = window[kCGWindowOwnerPID as String] as? pid_t else { continue }
+            guard let cgID = (window[kCGWindowNumber as String] as? NSNumber)?.uint32Value else { continue }
+            candidatesByPID[pid, default: []].insert(CGWindowID(cgID))
+        }
+
+        if candidatesByPID.isEmpty { return }
+        aslog("rescueWindows: \(candidatesByPID.values.reduce(0) { $0 + $1.count }) candidate(s) across \(candidatesByPID.count) process(es)")
+
+        for (pid, cgIDs) in candidatesByPID {
+            let appEl = AXUIElementCreateApplication(pid)
+            var value: CFTypeRef?
+            let rc = AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &value)
+            guard rc == .success, let axWindows = value as? [AXUIElement] else { continue }
+
+            for axWin in axWindows {
+                var winID: CGWindowID = 0
+                guard _AXUIElementGetWindow(axWin, &winID) == .success else { continue }
+                guard cgIDs.contains(winID) else { continue }
+
+                // Read size to centre the window on main; default to a
+                // sensible offset if size lookup fails.
+                var size = CGSize(width: 400, height: 300)
+                var sizeRef: CFTypeRef?
+                if AXUIElementCopyAttributeValue(axWin, kAXSizeAttribute as CFString, &sizeRef) == .success,
+                   let sizeVal = sizeRef, CFGetTypeID(sizeVal) == AXValueGetTypeID() {
+                    let axVal = sizeVal as! AXValue
+                    if AXValueGetType(axVal) == .cgSize {
+                        var s = CGSize.zero
+                        if AXValueGetValue(axVal, .cgSize, &s) { size = s }
+                    }
+                }
+
+                var newOrigin = CGPoint(
+                    x: mainBounds.midX - size.width / 2,
+                    y: mainBounds.midY - size.height / 2
+                )
+                // Clamp so the title bar stays draggable.
+                if newOrigin.x < mainBounds.minX { newOrigin.x = mainBounds.minX }
+                if newOrigin.y < mainBounds.minY { newOrigin.y = mainBounds.minY }
+
+                if let posVal = AXValueCreate(.cgPoint, &newOrigin) {
+                    let setRC = AXUIElementSetAttributeValue(axWin, kAXPositionAttribute as CFString, posVal)
+                    aslog("rescueWindow: pid=\(pid) winID=\(winID) → (\(Int(newOrigin.x)),\(Int(newOrigin.y))) rc=\(setRC.rawValue)")
+                }
+            }
         }
     }
 
