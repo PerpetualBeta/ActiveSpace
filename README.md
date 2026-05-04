@@ -29,7 +29,8 @@ Right-click the menu-bar bubble and choose **Settings…**:
 - **Grid** — optional row width for the popover layout and the Space Up / Space Down hotkeys.
 - **Permissions** — live status of Accessibility and Input Monitoring with grant buttons.
 - **Launch at Login** — start automatically.
-- **Auto-update** — schedule + optional automatic install.
+
+Auto-updates are handled by Sparkle. Use the **Check for Updates…** entry in the right-click menu to check on demand; Sparkle's prompt offers an "Automatically download and install updates in the future" checkbox the first time an update is available.
 
 ## Permissions
 
