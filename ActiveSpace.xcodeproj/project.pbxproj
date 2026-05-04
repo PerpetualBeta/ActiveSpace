@@ -38,6 +38,8 @@
 		AA000095 /* SwitcherHUDWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000094 /* SwitcherHUDWindow.swift */; };
 		AA000097 /* SwitcherAppStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000096 /* SwitcherAppStack.swift */; };
 		AA000098 /* JorvikHotkeyRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000099 /* JorvikHotkeyRegistry.swift */; };
+		AA000601 /* Sparkle.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA000600; };
+		AA000602 /* Sparkle.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AA000600; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -49,6 +51,17 @@
 			files = (
 				5EF0B3822F9538D300E097E2 /* cc.jorviksoftware.ActiveSpace.agent.plist in CopyFiles */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA000603 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				AA000602 /* Sparkle.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -90,6 +103,7 @@
 		AA000094 /* SwitcherHUDWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherHUDWindow.swift; sourceTree = "<group>"; };
 		AA000096 /* SwitcherAppStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherAppStack.swift; sourceTree = "<group>"; };
 		AA000099 /* JorvikHotkeyRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikHotkeyRegistry.swift; sourceTree = "<group>"; };
+		AA000600 /* Sparkle.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Sparkle.framework; path = Sparkle.framework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +112,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5EF0B3802F95380D00E097E2 /* ServiceManagement.framework in Frameworks */,
+				AA000601 /* Sparkle.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -108,6 +123,7 @@
 			isa = PBXGroup;
 			children = (
 				5EF0B37F2F95380D00E097E2 /* ServiceManagement.framework */,
+				AA000600 /* Sparkle.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -190,6 +206,7 @@
 				AA000016 /* Resources */,
 				5EF0B3812F95386B00E097E2 /* CopyFiles */,
 				5E2FCBE32FA6B8D100DA38EE /* Embed MouseCatcher */,
+				AA000603 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -437,6 +454,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ActiveSpace/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -463,6 +484,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ActiveSpace/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

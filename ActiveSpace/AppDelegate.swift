@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Combine
 import ServiceManagement
+import Sparkle
 
 // MARK: - Module-level hotkey state (required for C-compatible CGEvent tap callback)
 
@@ -111,6 +112,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var popover: NSPopover?
     private var cancellables = Set<AnyCancellable>()
     let updateChecker = JorvikUpdateChecker(repoName: "ActiveSpace")
+    let sparkleUserDriverDelegate = ActiveSpaceUserDriverDelegate()
+    lazy var sparkleUpdater = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: sparkleUserDriverDelegate
+    )
 
     // Shortcut state (mirrored to module-level vars for the tap callback)
     var nextKeyCode: UInt16 = 0   { didSet { _nextKeyCode = nextKeyCode } }
@@ -207,7 +214,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         updateIcon()
-        updateChecker.checkOnSchedule()
+        // Sparkle (sparkleUpdater) handles update polling now. Legacy
+        // JorvikUpdateChecker instance is kept around because
+        // JorvikSettingsView.showWindow still requires one as a parameter,
+        // pending JorvikKit retirement (see infrastructure-open-follow-ups §11.5).
+        _ = sparkleUpdater  // forces lazy init so Sparkle starts at launch
+        // updateChecker.checkOnSchedule()  // disabled — Sparkle owns this now
 
         observer.$currentSpaceIndex
             .receive(on: DispatchQueue.main)
@@ -556,15 +568,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Context menu (right-click)
 
     private func showContextMenu() {
+        let actions: [JorvikMenuBuilder.ActionItem] = [
+            .init(
+                title: "Check for Updates\u{2026}",
+                action: #selector(checkForUpdates(_:)),
+                target: self
+            )
+        ]
         let menu = JorvikMenuBuilder.buildMenu(
             appName: "ActiveSpace",
             aboutAction: #selector(openAbout),
             settingsAction: #selector(openSettings),
-            target: self
+            target: self,
+            actions: actions
         )
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        sparkleUpdater.checkForUpdates(sender)
     }
 
     @objc private func openAbout() {
@@ -589,6 +613,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateIcon() {
         statusItem.button?.image = MenuBarIcon.image(for: observer.currentSpaceIndex)
+    }
+}
+
+// MARK: - Sparkle user driver delegate
+
+/// LSUIElement apps don't auto-activate when they present windows, so
+/// Sparkle's update dialogs would appear behind whatever app is currently
+/// key. This brings ActiveSpace frontmost just before each modal.
+final class ActiveSpaceUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
+    func standardUserDriverWillShowModalAlert() {
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 

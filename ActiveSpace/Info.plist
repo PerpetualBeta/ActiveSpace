@@ -28,5 +28,13 @@
 	<string>NSApplication</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>ActiveSpace needs to send commands to System Events to switch between desktop spaces.</string>
+	<key>SUFeedURL</key>
+	<string>https://jorviksoftware.cc/appcasts/activespace.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>zVc7rs8EiLmlDAYpgaIItjnHtsCkvyVVub+I0/sSb3Q=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>
