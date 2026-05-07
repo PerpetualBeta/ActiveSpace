@@ -38,7 +38,6 @@
 		AA000095 /* SwitcherHUDWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000094 /* SwitcherHUDWindow.swift */; };
 		AA000097 /* SwitcherAppStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000096 /* SwitcherAppStack.swift */; };
 		AA000098 /* JorvikHotkeyRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000099 /* JorvikHotkeyRegistry.swift */; };
-		AA0000A1 /* AnchorWindowSwitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000A0 /* AnchorWindowSwitcher.swift */; };
 		AA000601 /* Sparkle.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA000600; };
 		AA000602 /* Sparkle.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AA000600; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -104,7 +103,6 @@
 		AA000094 /* SwitcherHUDWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherHUDWindow.swift; sourceTree = "<group>"; };
 		AA000096 /* SwitcherAppStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherAppStack.swift; sourceTree = "<group>"; };
 		AA000099 /* JorvikHotkeyRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikHotkeyRegistry.swift; sourceTree = "<group>"; };
-		AA0000A0 /* AnchorWindowSwitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnchorWindowSwitcher.swift; sourceTree = "<group>"; };
 		AA000600 /* Sparkle.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Sparkle.framework; path = Sparkle.framework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -152,7 +150,6 @@
 				AA000032 /* CGSPrivate.swift */,
 				AA000033 /* SpaceObserver.swift */,
 				AA000034 /* SpaceSwitcher.swift */,
-				AA0000A0 /* AnchorWindowSwitcher.swift */,
 				AA000035 /* MenuBarIcon.swift */,
 				AA000036 /* SpaceSelectorView.swift */,
 				AA000037 /* Info.plist */,
@@ -301,7 +298,6 @@
 				5EF0B37D2F95378700E097E2 /* ActiveSpaceFingerprint.swift in Sources */,
 				AA000053 /* SpaceObserver.swift in Sources */,
 				AA000054 /* SpaceSwitcher.swift in Sources */,
-				AA0000A1 /* AnchorWindowSwitcher.swift in Sources */,
 				AA000055 /* MenuBarIcon.swift in Sources */,
 				AA000056 /* SpaceSelectorView.swift in Sources */,
 				AA000059 /* AboutView.swift in Sources */,
