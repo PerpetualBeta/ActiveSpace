@@ -97,10 +97,17 @@ static CGDirectDisplayID _virtualDisplayID = 0;
     dumpClass(CGVirtualDisplay, @"CGVirtualDisplay");
     dumpClass(NSClassFromString(@"CGVirtualDisplaySettings"), @"CGVirtualDisplaySettings");
 
-    // Create mode: 640x480 @ 60Hz. This is large enough that macOS treats it as
-    // a real display (and so forces UUID-based display identifiers, fixing the
-    // single-monitor "Main" identifier issue that breaks Dock gesture routing).
-    // Smaller sizes (e.g. 1x1) get ignored by macOS and don't trigger the fix.
+    // Create mode: 1x1 @ 60Hz. The hypothesis under test (2026-05-08) is
+    // that the very smallest display we can register is enough to trigger
+    // the UUID-identifier flip in WindowServer, while being too small for
+    // macOS to host the cursor / Spotlight / Dock / screensaver on. A
+    // standalone probe today confirmed that 1x1 (and every size up to
+    // 640x640) successfully creates and applies settings; what we don't
+    // know without shipping is whether 1x1 triggers the identifier flip.
+    // If gesture switching breaks after this change, the hypothesis is
+    // wrong and we walk the size up — 16x16, 32x32, 64x64, 128x128,
+    // until the flip triggers. The earlier comment claiming "1x1 gets
+    // ignored" had no evidence behind it and is now superseded.
     SEL modeSel = NSSelectorFromString(@"initWithWidth:height:refreshRate:");
     NSMethodSignature *modeSig = [CGVirtualDisplayMode instanceMethodSignatureForSelector:modeSel];
     if (!modeSig) {
@@ -109,7 +116,7 @@ static CGDirectDisplayID _virtualDisplayID = 0;
     }
     NSInvocation *modeInv = [NSInvocation invocationWithMethodSignature:modeSig];
     modeInv.selector = modeSel;
-    unsigned int w = 640, h = 480;
+    unsigned int w = 1, h = 1;
     double rate = 60.0;
     [modeInv setArgument:&w atIndex:2];
     [modeInv setArgument:&h atIndex:3];
@@ -125,15 +132,20 @@ static CGDirectDisplayID _virtualDisplayID = 0;
         return nil;
     }
 
-    // Create descriptor
+    // Create descriptor. maxPixelsWide/High and sizeInMillimeters track
+    // the chosen mode (1x1 here) so the descriptor is internally
+    // consistent. vendor/product/serial IDs are unchanged from the
+    // original 640x480 configuration so macOS reuses the remembered
+    // display arrangement and doesn't pop a fresh "Mirror or Extend?"
+    // dialog when the size changes.
     id desc = [[CGVirtualDisplayDescriptor alloc] init];
     [desc setValue:@"ActiveSpace Virtual Display" forKey:@"name"];
     [desc setValue:@(0xACE5) forKey:@"vendorID"];
     [desc setValue:@(0x0001) forKey:@"productID"];
     [desc setValue:@(0x0001) forKey:@"serialNum"];
-    [desc setValue:@(640) forKey:@"maxPixelsWide"];
-    [desc setValue:@(480) forKey:@"maxPixelsHigh"];
-    [desc setValue:[NSValue valueWithSize:NSMakeSize(169, 127)] forKey:@"sizeInMillimeters"];
+    [desc setValue:@(1) forKey:@"maxPixelsWide"];
+    [desc setValue:@(1) forKey:@"maxPixelsHigh"];
+    [desc setValue:[NSValue valueWithSize:NSMakeSize(1, 1)] forKey:@"sizeInMillimeters"];
     [desc setValue:dispatch_get_main_queue() forKey:@"queue"];
 
     // Create virtual display via NSInvocation. The previous
