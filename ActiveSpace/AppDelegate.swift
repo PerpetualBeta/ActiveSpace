@@ -144,30 +144,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// When on, single-physical-display setups skip the virtual display
-    /// entirely. Switching falls through to the existing direct CGS API path
-    /// (`CGSManagedDisplaySetCurrentSpace` + `SLSEnsureSpaceSwitchToActive
-    /// Process` + `SLSSpaceResetMenuBar`) which works on a single physical
-    /// display with the "Main" identifier — the menu-bar repaint issue the
-    /// virtual display was originally added to work around does not appear
-    /// to surface in current macOS, and the SLS calls in `directSwitch`
-    /// keep the menu bar consistent across switches.
-    ///
-    /// Sidesteps the cursor / Spotlight / screensaver collisions caused by
-    /// the virtual display. Multi-display setups are untouched (no virtual
-    /// is created there anyway; gesture switching continues to work because
-    /// real second displays already give us UUID identifiers). Default OFF
-    /// for the experimental period.
-    var useAnchorWindowSwitching: Bool = false {
-        didSet {
-            UserDefaults.standard.set(useAnchorWindowSwitching, forKey: "useAnchorWindowSwitching")
-            if useAnchorWindowSwitching != oldValue {
-                aslog("useAnchorWindowSwitching → \(useAnchorWindowSwitching); reconciling virtual display")
-                VirtualDisplay.reconcileFromSettingChange()
-            }
-        }
-    }
-
     /// Exposes the tap so JorvikShortcutRecorder can disable it during recording.
     var currentEventTap: CFMachPort? { _eventTap }
 
@@ -457,7 +433,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         rowWidth = d.integer(forKey: "rowWidth")           // 0 if absent
         switcherEnabled = d.bool(forKey: "switcherEnabled")
-        useAnchorWindowSwitching = d.bool(forKey: "useAnchorWindowSwitching")
     }
 
     func saveShortcuts() {
@@ -743,16 +718,6 @@ private struct ActiveSpaceSettingsContent: View {
                     set: { delegate.switcherEnabled = $0; delegate.saveSwitcherEnabled() }
                 ))
                 Text("Replaces native Command-Tab with a switcher that only shows apps with windows on the current space. Requires Accessibility (see Permissions below).")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Experimental") {
-                Toggle("Skip virtual display (single-display)", isOn: Binding(
-                    get: { delegate.useAnchorWindowSwitching },
-                    set: { delegate.useAnchorWindowSwitching = $0 }
-                ))
-                Text("Disables the 640\u{00d7}480 helper virtual display on single-physical-display Macs. Fixes the cursor traps, Spotlight rendering on the virtual, and the 640\u{00d7}480 screensaver box that the virtual causes. Switching falls back to the direct Core Graphics API path \u{2014} which appears to work fine on current macOS without the virtual; the original gesture-routing concern that motivated the virtual no longer reproduces. No effect on multi-display setups (no virtual is created there anyway).")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
