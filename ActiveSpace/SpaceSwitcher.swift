@@ -44,6 +44,16 @@ enum SpaceSwitcher {
             return
         }
 
+        // Anchor-window path. Only attempted when the user has opted in and
+        // an anchor for the target space exists. Returns true on success;
+        // false (no anchor planted yet) falls through to the normal path so
+        // the switch still happens. Anchors plant lazily as the user visits
+        // spaces, so coverage builds up over normal use.
+        if UserDefaults.standard.bool(forKey: "useAnchorWindowSwitching"),
+           AnchorWindowSwitcher.shared.switchTo(managedSpaceID: target.managedSpaceID) {
+            return
+        }
+
         if isSingleDisplay() {
             directSwitch(to: target, from: observer.spaceInfo(forIndex: current))
         } else {

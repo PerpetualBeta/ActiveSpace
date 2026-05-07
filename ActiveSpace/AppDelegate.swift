@@ -144,6 +144,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// When on, single-physical-display setups skip the virtual display entirely.
+    /// Switching uses invisible anchor windows (one planted lazily in each space
+    /// the user visits) — clicking a space dot raises the matching anchor and
+    /// macOS natively switches to its space. Sidesteps the cursor / Spotlight /
+    /// screensaver collisions caused by the virtual. Multi-display setups are
+    /// untouched. Default OFF for the experimental period.
+    var useAnchorWindowSwitching: Bool = false {
+        didSet {
+            UserDefaults.standard.set(useAnchorWindowSwitching, forKey: "useAnchorWindowSwitching")
+            if useAnchorWindowSwitching != oldValue {
+                aslog("useAnchorWindowSwitching → \(useAnchorWindowSwitching); reconciling virtual display")
+                VirtualDisplay.reconcileFromSettingChange()
+                if useAnchorWindowSwitching {
+                    AnchorWindowSwitcher.shared.start(observer: self.observer)
+                } else {
+                    AnchorWindowSwitcher.shared.stop()
+                }
+            }
+        }
+    }
+
     /// Exposes the tap so JorvikShortcutRecorder can disable it during recording.
     var currentEventTap: CFMachPort? { _eventTap }
 
@@ -433,6 +454,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         rowWidth = d.integer(forKey: "rowWidth")           // 0 if absent
         switcherEnabled = d.bool(forKey: "switcherEnabled")
+        useAnchorWindowSwitching = d.bool(forKey: "useAnchorWindowSwitching")
     }
 
     func saveShortcuts() {
@@ -718,6 +740,16 @@ private struct ActiveSpaceSettingsContent: View {
                     set: { delegate.switcherEnabled = $0; delegate.saveSwitcherEnabled() }
                 ))
                 Text("Replaces native Command-Tab with a switcher that only shows apps with windows on the current space. Requires Accessibility (see Permissions below).")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Experimental") {
+                Toggle("Anchor-window switching (single-display)", isOn: Binding(
+                    get: { delegate.useAnchorWindowSwitching },
+                    set: { delegate.useAnchorWindowSwitching = $0 }
+                ))
+                Text("Switches Spaces by raising an invisible anchor window in the target Space rather than via the Dock's gesture pipeline. Disables the helper virtual display on single-display Macs, which fixes the cursor / Spotlight / screensaver collisions caused by it. Anchors plant lazily as you visit Spaces; until every Space has been visited once, switches to fresh Spaces fall back to the default mechanism. Mission Control will show a 1-pixel dot in each Space — the anchor window. No effect on multi-display setups.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

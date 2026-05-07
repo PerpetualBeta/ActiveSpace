@@ -417,6 +417,16 @@ enum VirtualDisplay {
     /// Called from `applicationWillTerminate` so a self-restart under launchd
     /// doesn't inherit a lingering virtual display that would confuse the
     /// respawned instance's initial fingerprint.
+    /// Re-run reconcile after the `useAnchorWindowSwitching` setting flips.
+    /// Public entry point for `AppDelegate`'s setter; the normal `reconcile`
+    /// is private. Idempotent and cheap — short-circuits when the desired
+    /// state already matches actual state.
+    static func reconcileFromSettingChange() {
+        DispatchQueue.main.async {
+            reconcile()
+        }
+    }
+
     static func teardown() {
         if let observer = screenObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -444,9 +454,17 @@ enum VirtualDisplay {
         }
         let realCount = physicalDisplayCount()
         let haveVirtual = VirtualDisplayHelper.isCreated()
-        let needVirtual = realCount <= 1
+        // When the user has opted into anchor-window switching, the virtual
+        // display is no longer needed on single-physical-display setups —
+        // the anchor mechanism doesn't depend on UUID display identifiers
+        // and so doesn't need a second display to be present. We treat that
+        // toggle as overriding `realCount <= 1` so the existing destroy
+        // path runs cleanly when the toggle flips ON with the virtual still
+        // alive.
+        let anchorWindowSwitching = UserDefaults.standard.bool(forKey: "useAnchorWindowSwitching")
+        let needVirtual = (realCount <= 1) && !anchorWindowSwitching
 
-        aslog("VirtualDisplay.reconcile: real=\(realCount) haveVirtual=\(haveVirtual) needVirtual=\(needVirtual)")
+        aslog("VirtualDisplay.reconcile: real=\(realCount) haveVirtual=\(haveVirtual) needVirtual=\(needVirtual) anchorMode=\(anchorWindowSwitching)")
 
         // Heal: during a hot-swap that briefly drops to zero real displays, the
         // virtual is promoted to CGMainDisplayID and the Dock binds to it. When
