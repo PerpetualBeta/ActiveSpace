@@ -160,14 +160,26 @@ final class AnchorWindowSwitcher {
     // MARK: - Window construction
 
     private func makeAnchorWindow(label: String) -> NSWindow {
-        let window = NSWindow(
+        // Borderless NSWindow's default `canBecomeKey` is false, which
+        // silently breaks our switching mechanism: makeKeyAndOrderFront
+        // would order the window forward but never make it key, and macOS
+        // only switches Space when the activated app's *key* window is in
+        // a different Space. The subclass overrides those properties so
+        // the borderless anchor really does become key.
+        let window = AnchorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
         window.title = label
-        window.alphaValue = 0.001       // not exactly zero — some macOS versions skip space-resolution for fully-transparent windows
+        // alphaValue = 1.0 (NOT 0.001) — observed empirically that macOS's
+        // space-switch heuristic skips windows with effective alpha near
+        // zero. Visual invisibility is achieved instead by clear background
+        // and no content view: the window exists at 1×1 with no pixels to
+        // render. WindowServer still considers it a real space-bound window;
+        // the user sees nothing.
+        window.alphaValue = 1.0
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
@@ -185,4 +197,14 @@ final class AnchorWindowSwitcher {
         }
         return window
     }
+}
+
+/// Borderless `NSWindow` that can become key and main. Required because
+/// `[.borderless]` style mask defaults `canBecomeKey` and `canBecomeMain`
+/// to false, which silently breaks `makeKeyAndOrderFront` — the window
+/// gets ordered front but never made key, and macOS only switches Space
+/// when the activated app's key window is in another Space.
+private final class AnchorWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 }
