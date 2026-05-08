@@ -287,7 +287,22 @@ static void readConfiguredSize(unsigned int *outW, unsigned int *outH) {
     CGError err = CGBeginDisplayConfiguration(&config);
     if (err == kCGErrorSuccess && config) {
         CGConfigureDisplayOrigin(config, cgID, offX, offY);
-        ASLog(@"CGConfigureDisplayOrigin(virtual=%u, %d, %d) [mainBounds=%@]", cgID, offX, offY, NSStringFromRect(NSRectFromCGRect(mainBounds)));
+        // Force extended mode every time we register the virtual.
+        // Defends against the saved-state path discovered 2026-05-08
+        // when a 1x1 virtual triggered the screen-share / mirror picker:
+        // selecting "Start Mirroring" wrote a MasterUUID into
+        // ~/Library/Preferences/ByHost/com.apple.windowserver.displays.*.plist
+        // pinning the *real* display to mirror the virtual. macOS replays
+        // that saved arrangement on every subsequent virtual creation
+        // (vendor/product/serial IDs match), even at sane sizes. Telling
+        // the virtual to mirror nothing — and the real display to mirror
+        // nothing — short-circuits the replay regardless of plist state.
+        CGConfigureDisplayMirrorOfDisplay(config, cgID, kCGNullDirectDisplay);
+        if (mainDisplay != cgID) {
+            CGConfigureDisplayMirrorOfDisplay(config, mainDisplay, kCGNullDirectDisplay);
+        }
+        ASLog(@"CGConfigureDisplayOrigin(virtual=%u, %d, %d) + MirrorOfDisplay=NULL [mainBounds=%@]",
+              cgID, offX, offY, NSStringFromRect(NSRectFromCGRect(mainBounds)));
         CGError complete = CGCompleteDisplayConfiguration(config, kCGConfigureForSession);
         ASLog(@"CGCompleteDisplayConfiguration → %d", complete);
     } else {
