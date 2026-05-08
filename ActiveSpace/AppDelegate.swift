@@ -802,6 +802,8 @@ private struct ActiveSpaceSettingsContent: View {
                     .foregroundStyle(.secondary)
             }
 
+            VirtualDisplaySizeSection()
+
             Section("Permissions") {
                 HStack {
                     Text("Accessibility")
@@ -832,6 +834,132 @@ private struct ActiveSpaceSettingsContent: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Virtual Display size walk-down experiment
+//
+// Built 2026-05-08 to find the smallest virtual-display size that still
+// triggers BOTH (1) NSScreen.screens.count → 2 and (2) the CGS "Display
+// Identifier" flip from "Main" to a UUID. These are the two conditions
+// the virtual exists to satisfy. A smaller virtual = smaller surface for
+// cursor traps, Spotlight mis-routing, and screensaver mis-sizing.
+//
+// Picker writes VirtualDisplayWidth / VirtualDisplayHeight defaults; the
+// "Apply" button calls VirtualDisplay.recreate() to take them live. The
+// diagnostic block reads the live state so the threshold is visible
+// in-place without a separate probe.
+private struct VirtualDisplaySizeSection: View {
+
+    private struct Preset: Identifiable {
+        let w: Int
+        let h: Int
+        var id: String { "\(w)x\(h)" }
+        var label: String { "\(w) × \(h)" }
+    }
+
+    private let presets: [Preset] = [
+        Preset(w: 640, h: 480),
+        Preset(w: 480, h: 360),
+        Preset(w: 400, h: 300),
+        Preset(w: 320, h: 240),
+        Preset(w: 256, h: 192),
+        Preset(w: 200, h: 150),
+        Preset(w: 160, h: 120),
+        Preset(w: 128, h: 96),
+        Preset(w: 96, h: 72),
+        Preset(w: 64, h: 48),
+        Preset(w: 32, h: 32),
+        Preset(w: 16, h: 16),
+    ]
+
+    @AppStorage("VirtualDisplayWidth") private var storedWidth: Int = 640
+    @AppStorage("VirtualDisplayHeight") private var storedHeight: Int = 480
+    @State private var diagnosticTick: Int = 0
+
+    var body: some View {
+        Section("Virtual Display (experimental)") {
+            Picker("Size", selection: Binding<String>(
+                get: { "\(storedWidth)x\(storedHeight)" },
+                set: { tag in
+                    let parts = tag.split(separator: "x").compactMap { Int($0) }
+                    guard parts.count == 2 else { return }
+                    storedWidth = parts[0]
+                    storedHeight = parts[1]
+                }
+            )) {
+                ForEach(presets) { p in
+                    Text(p.label).tag(p.id)
+                }
+            }
+
+            HStack {
+                Button("Apply (recreate now)") {
+                    VirtualDisplay.recreate()
+                    // Refresh the diagnostic ~1.2s after the recreate kicks
+                    // off so WindowServer has settled before we read.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        diagnosticTick &+= 1
+                    }
+                }
+                Spacer()
+                Button("Refresh diagnostic") { diagnosticTick &+= 1 }
+                    .font(.caption)
+            }
+
+            DiagnosticView(tick: diagnosticTick)
+
+            Text("Smaller is better for reducing cursor traps and Spotlight / screensaver mis-routing — but the virtual must stay large enough to register as an extended display. 1 × 1 puts macOS into mirror-source mode and breaks the system. Walk down from 640 × 480 until the diagnostic flips to bad, then go one step back up.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private struct DiagnosticView: View {
+        let tick: Int
+
+        var body: some View {
+            let count = NSScreen.screens.count
+            let ident = readDisplayIdentifier()
+            let countOK = count >= 2
+            let identOK = ident != "Main" && ident != "?" && !ident.isEmpty
+            let bothOK = countOK && identOK
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("NSScreen count").font(.caption)
+                    Spacer()
+                    Text("\(count) \(countOK ? "✓" : "✗")")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(countOK ? .green : .red)
+                }
+                HStack {
+                    Text("Display Identifier").font(.caption)
+                    Spacer()
+                    Text("\(short(ident)) \(identOK ? "✓" : "✗")")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(identOK ? .green : .red)
+                }
+                Text(bothOK
+                     ? "Both flips OK — this size is viable."
+                     : "Size doesn't trigger the flips we need.")
+                    .font(.caption2)
+                    .foregroundStyle(bothOK ? .green : .orange)
+            }
+            .id(tick)
+        }
+
+        private func readDisplayIdentifier() -> String {
+            guard let arr = CGSCopyManagedDisplaySpaces(CGSMainConnectionID()) as? [[String: Any]] else { return "?" }
+            guard let first = arr.first else { return "?" }
+            if let s = first["Display Identifier"] as? String { return s }
+            return "?"
+        }
+
+        private func short(_ s: String) -> String {
+            if s.count <= 14 { return s }
+            return String(s.prefix(8)) + "…"
         }
     }
 }

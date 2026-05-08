@@ -413,6 +413,37 @@ enum VirtualDisplay {
         VirtualDisplayHelper.displayUUIDString()
     }
 
+    /// Tear down and rebuild the virtual display at whatever size is currently
+    /// stored in UserDefaults. Used by the size-walk experiment in Settings —
+    /// the picker writes new VirtualDisplayWidth / VirtualDisplayHeight
+    /// defaults, then calls this to recreate the display so the new size
+    /// takes effect without an app relaunch. Multi-display configurations
+    /// are short-circuited (no virtual is needed).
+    static func recreate() {
+        aslog("VirtualDisplay.recreate (settings size change)")
+        guard physicalDisplayCount() <= 1 else {
+            aslog("recreate: multi-display, no virtual to recreate")
+            return
+        }
+        if VirtualDisplayHelper.isCreated() {
+            if destroyInFlight {
+                aslog("recreate: destroy already in flight — bailing")
+                return
+            }
+            destroyInFlight = true
+            VirtualDisplayHelper.destroy()
+            updateCursorFence(nil)
+            destroyInFlight = false
+        }
+        enforceAttemptCount = 0
+        lastEnforceAttempt = nil
+        // Brief delay so WindowServer fully releases the old display's
+        // framebuffer before we register the new one.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            Self.reconcile()
+        }
+    }
+
     /// Remove the screen observer and destroy the virtual display if present.
     /// Called from `applicationWillTerminate` so a self-restart under launchd
     /// doesn't inherit a lingering virtual display that would confuse the

@@ -12,4 +12,8 @@
 /// Unlike displayUUIDString, this is captured synchronously at create time
 /// and is immediately available — use it for race-free display identification.
 + (CGDirectDisplayID)displayID;
+/// Width / height of the most-recently-created virtual display (whatever was
+/// passed at create-time, after defaults clamping). 0 / 0 if not created.
++ (unsigned int)currentWidth;
++ (unsigned int)currentHeight;
 @end

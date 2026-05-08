@@ -45,9 +45,33 @@ static void dumpClass(Class cls, NSString *label) {
 static id _virtualDisplay = nil;
 static NSString *_virtualDisplayUUID = nil;
 static CGDirectDisplayID _virtualDisplayID = 0;
+static unsigned int _virtualDisplayWidth = 0;
+static unsigned int _virtualDisplayHeight = 0;
 
 + (CGDirectDisplayID)displayID {
     return _virtualDisplayID;
+}
+
++ (unsigned int)currentWidth { return _virtualDisplayWidth; }
++ (unsigned int)currentHeight { return _virtualDisplayHeight; }
+
+/// Read VirtualDisplayWidth / VirtualDisplayHeight from NSUserDefaults,
+/// clamped to a sane range. Default is 640x480 (the known-working baseline).
+/// Floors the size at 16x16 to keep an easy hardcoded escape hatch — even
+/// the size-walk-down experiment stays above the size where macOS's mirror-
+/// target heuristic triggered (1x1 broke things badly on 2026-05-08).
+static void readConfiguredSize(unsigned int *outW, unsigned int *outH) {
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSInteger w = [d integerForKey:@"VirtualDisplayWidth"];
+    NSInteger h = [d integerForKey:@"VirtualDisplayHeight"];
+    if (w <= 0) w = 640;
+    if (h <= 0) h = 480;
+    if (w < 16) w = 16;
+    if (h < 16) h = 16;
+    if (w > 4096) w = 4096;
+    if (h > 4096) h = 4096;
+    *outW = (unsigned int)w;
+    *outH = (unsigned int)h;
 }
 
 + (NSString *)displayUUIDString {
@@ -97,14 +121,17 @@ static CGDirectDisplayID _virtualDisplayID = 0;
     dumpClass(CGVirtualDisplay, @"CGVirtualDisplay");
     dumpClass(NSClassFromString(@"CGVirtualDisplaySettings"), @"CGVirtualDisplaySettings");
 
-    // Create mode: 640x480 @ 60Hz. We tested 1x1 on 2026-05-08 — it builds,
-    // but macOS treats a sub-display-sized surface as a screen-share / mirror
-    // target rather than an extended display: the *real* display gets put
-    // into mirror-source role of the virtual (active=0), the system pops a
-    // "What do you want to show on..." picker, NSScreen.screens.count stays
-    // at 1, and CGSCopyManagedDisplaySpaces still reports "Main". Both
-    // criteria we need (count→2, identifier→UUID) failed. 640x480 is the
-    // known-working baseline that triggers both flips.
+    // Create mode at the size stored in UserDefaults (default 640x480).
+    // We tested 1x1 on 2026-05-08 — it builds, but macOS treats a sub-
+    // display-sized surface as a screen-share / mirror target rather than
+    // an extended display: the *real* display gets put into mirror-source
+    // role of the virtual (active=0), the system pops a "What do you want
+    // to show on..." picker, NSScreen.screens.count stays at 1, and
+    // CGSCopyManagedDisplaySpaces still reports "Main". Both criteria we
+    // need (count→2, identifier→UUID) failed. 640x480 is the known-
+    // working baseline; the Settings → Virtual Display size walk-down
+    // experiment lets the user step down from there to find the smallest
+    // viable size.
     SEL modeSel = NSSelectorFromString(@"initWithWidth:height:refreshRate:");
     NSMethodSignature *modeSig = [CGVirtualDisplayMode instanceMethodSignatureForSelector:modeSel];
     if (!modeSig) {
@@ -113,7 +140,9 @@ static CGDirectDisplayID _virtualDisplayID = 0;
     }
     NSInvocation *modeInv = [NSInvocation invocationWithMethodSignature:modeSig];
     modeInv.selector = modeSel;
-    unsigned int w = 640, h = 480;
+    unsigned int w = 0, h = 0;
+    readConfiguredSize(&w, &h);
+    ASLog(@"Configured virtual size: %ux%u", w, h);
     double rate = 60.0;
     [modeInv setArgument:&w atIndex:2];
     [modeInv setArgument:&h atIndex:3];
@@ -129,18 +158,22 @@ static CGDirectDisplayID _virtualDisplayID = 0;
         return nil;
     }
 
-    // Create descriptor. maxPixelsWide/High and sizeInMillimeters track
-    // the chosen mode (640x480 here). vendor/product/serial IDs are
-    // stable so macOS reuses the remembered display arrangement and
-    // doesn't pop a fresh "Mirror or Extend?" dialog.
+    // Create descriptor. maxPixelsWide/High track the chosen mode;
+    // sizeInMillimeters scales with it (~265 ppi, Retina-ish). vendor/
+    // product/serial IDs are stable across all sizes so macOS reuses the
+    // remembered display arrangement and doesn't pop a fresh "Mirror or
+    // Extend?" dialog when the size changes.
     id desc = [[CGVirtualDisplayDescriptor alloc] init];
     [desc setValue:@"ActiveSpace Virtual Display" forKey:@"name"];
     [desc setValue:@(0xACE5) forKey:@"vendorID"];
     [desc setValue:@(0x0001) forKey:@"productID"];
     [desc setValue:@(0x0001) forKey:@"serialNum"];
-    [desc setValue:@(640) forKey:@"maxPixelsWide"];
-    [desc setValue:@(480) forKey:@"maxPixelsHigh"];
-    [desc setValue:[NSValue valueWithSize:NSMakeSize(169, 127)] forKey:@"sizeInMillimeters"];
+    [desc setValue:@(w) forKey:@"maxPixelsWide"];
+    [desc setValue:@(h) forKey:@"maxPixelsHigh"];
+    // Track physical dimensions roughly proportional to pixel size so the
+    // descriptor stays internally consistent. ~265 ppi (≈Retina) is fine.
+    NSSize mm = NSMakeSize(MAX(1.0, (double)w / 10.5), MAX(1.0, (double)h / 10.5));
+    [desc setValue:[NSValue valueWithSize:mm] forKey:@"sizeInMillimeters"];
     [desc setValue:dispatch_get_main_queue() forKey:@"queue"];
 
     // Create virtual display via NSInvocation. The previous
@@ -171,6 +204,8 @@ static CGDirectDisplayID _virtualDisplayID = 0;
     }
 
     _virtualDisplay = display;
+    _virtualDisplayWidth = w;
+    _virtualDisplayHeight = h;
     NSNumber *displayID = [display valueForKey:@"displayID"];
     CGDirectDisplayID cgID = (CGDirectDisplayID)displayID.unsignedIntValue;
     _virtualDisplayID = cgID;
@@ -365,6 +400,8 @@ static CGDirectDisplayID _virtualDisplayID = 0;
     _virtualDisplay = nil;
     _virtualDisplayUUID = nil;
     _virtualDisplayID = 0;
+    _virtualDisplayWidth = 0;
+    _virtualDisplayHeight = 0;
 }
 
 @end
