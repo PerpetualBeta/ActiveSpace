@@ -841,16 +841,23 @@ private struct ActiveSpaceSettingsContent: View {
 // MARK: - Virtual Display size walk-down experiment
 //
 // Built 2026-05-08 to find the smallest virtual-display size that still
-// triggers BOTH (1) NSScreen.screens.count → 2 and (2) the CGS "Display
-// Identifier" flip from "Main" to a UUID. These are the two conditions
-// the virtual exists to satisfy. A smaller virtual = smaller surface for
-// cursor traps, Spotlight mis-routing, and screensaver mis-sizing.
+// registers as an extended display (so NSScreen.screens.count flips from
+// 1 to 2 and Dock's gesture path works). Picker writes VirtualDisplayWidth
+// / VirtualDisplayHeight defaults; "Apply" calls VirtualDisplay.recreate()
+// to take them live; the diagnostic block reads NSScreen and CGS state
+// so the result is visible in-place without a separate probe.
 //
-// Picker writes VirtualDisplayWidth / VirtualDisplayHeight defaults; the
-// "Apply" button calls VirtualDisplay.recreate() to take them live. The
-// diagnostic block reads the live state so the threshold is visible
-// in-place without a separate probe.
+// Hidden behind a feature flag — normal users don't see this section.
+// To enable for further testing:
+//
+//     defaults write cc.jorviksoftware.ActiveSpace \
+//         ShowVirtualDisplayExperiment -bool YES
+//
+// Then quit + relaunch ActiveSpace.
 private struct VirtualDisplaySizeSection: View {
+
+    @AppStorage("ShowVirtualDisplayExperiment") private var showExperiment: Bool = false
+
 
     private struct Preset: Identifiable {
         let w: Int
@@ -879,6 +886,13 @@ private struct VirtualDisplaySizeSection: View {
     @State private var diagnosticTick: Int = 0
 
     var body: some View {
+        if showExperiment {
+            sectionBody
+        }
+    }
+
+    @ViewBuilder
+    private var sectionBody: some View {
         Section("Virtual Display (experimental)") {
             Picker("Size", selection: Binding<String>(
                 get: { "\(storedWidth)x\(storedHeight)" },
