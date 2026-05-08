@@ -80,20 +80,6 @@ func SLSSetWindowPrefersCurrentSpace(_ conn: CGSConnectionID, _ windowID: UInt32
     return unsafeBitCast(sym, to: SLSSetWindowPrefersCurrentSpaceFn.self)(conn, windowID, prefers)
 }
 
-/// Move a CGS-managed window's origin by window ID, regardless of its owning
-/// process. Used by the off-virtual sweep to yank system-UI surfaces (e.g.
-/// Spotlight) off the virtual display when AX-based movement isn't available
-/// or won't work. Bounds are pixels in CG coordinate space (top-left origin).
-typealias SLSMoveWindowFn = @convention(c) (CGSConnectionID, UInt32, UnsafePointer<CGPoint>) -> OSStatus
-@discardableResult
-func SLSMoveWindow(_ conn: CGSConnectionID, _ windowID: UInt32, _ origin: CGPoint) -> OSStatus {
-    guard let skylight, let sym = dlsym(skylight, "SLSMoveWindow") else { return -1 }
-    var p = origin
-    return withUnsafePointer(to: &p) { ptr in
-        unsafeBitCast(sym, to: SLSMoveWindowFn.self)(conn, windowID, ptr)
-    }
-}
-
 /// Returns the ManagedSpaceIDs (as NSNumbers) that the given CG windows belong
 /// to, across the space types covered by `mask`. Pass mask `0x7` for all
 /// spaces (user + OS + current). Used by the switcher to determine per-window

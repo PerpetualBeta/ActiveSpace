@@ -122,13 +122,12 @@ enum VirtualDisplay {
     private static var sweepTimer: DispatchSourceTimer?
     private static let sweepInterval: DispatchTimeInterval = .milliseconds(150)
 
-    /// Window IDs for which SLSMoveWindow has failed twice in a row. Once a
-    /// window is here, the sweep doesn't try again (it's owned by a process
-    /// SLS won't let us move from this connection — log once and move on).
-    /// Cleared on virtual destroy so a fresh winID space gets a fresh budget.
-    private static var sweepFailedWinIDs: Set<UInt32> = []
-    private static var sweepFailureCounts: [UInt32: Int] = [:]
-    private static let sweepFailureLimit = 2
+    /// Throttle for Spotlight Esc-dismiss. Spotlight's window can persist for
+    /// a tick or two after Esc is sent (animation out), so we'd otherwise
+    /// re-send Esc several times before the window list reflects the
+    /// dismissal. One dismiss per second is plenty.
+    private static var lastSpotlightDismiss: Date = .distantPast
+    private static let spotlightDismissCooldown: TimeInterval = 1.0
 
     private static var sweepEnabled: Bool {
         UserDefaults.standard.bool(forKey: "VirtualDisplaySweepEnabled")
@@ -342,42 +341,41 @@ enum VirtualDisplay {
 
     /// Continuous off-virtual sweep. Runs on `sweepTimer` while the virtual
     /// exists and is not parked, gated on the `VirtualDisplaySweepEnabled`
-    /// UserDefaults flag. Yanks any window fully contained inside the virtual
-    /// rect back to the centre of main, regardless of whether AX can reach
-    /// it — uses `SLSMoveWindow` directly so system-UI surfaces (Spotlight,
-    /// system overlays) are reachable without their owning process's
-    /// cooperation. Layered on top of the event-driven cursor fence and the
-    /// existing on-fence-rect-change AX rescue; this is the backstop for
-    /// surfaces that materialise *between* events.
+    /// UserDefaults flag.
     ///
-    /// Skip-list: own bundle (don't yank our popover/settings sheet),
-    /// `WindowServer`, `Dock`, `loginwindow`, `Notification Center` — these
-    /// must never be moved by us regardless of where their windows appear.
+    /// Two effects per tick:
+    ///
+    /// 1. **Cursor backstop.** Calls `rescueCursorIfInsideVirtual()`. Catches
+    ///    cursor placements that don't fire mouseMoved (login restore, app
+    ///    launch, post-config-change), which the event-driven fence misses.
+    ///
+    /// 2. **Spotlight Esc-dismiss.** If a Spotlight window has landed fully
+    ///    inside the virtual rect (the bug — Spotlight invisible until
+    ///    ActiveSpace is killed), post a synthetic Esc to dismiss it. The
+    ///    user re-invokes via cmd+space, Spotlight follows the menu bar =
+    ///    main display. Throttled to one dismiss per second so the dismiss
+    ///    animation completes before we'd consider another.
+    ///
+    /// **What this is not.** A general window-move trap. The earlier design
+    /// used `SLSMoveWindow` for cross-process moves; empirically that returns
+    /// `kCGErrorFailure` (rc=1000) every time — SLS won't move another
+    /// process's window from our connection without privileges we don't ship
+    /// with. The targeted Esc-dismiss is the only system-UI rescue path we
+    /// can actually deliver. Cooperating apps are still covered by the
+    /// existing event-driven AX rescue (`rescueWindowsInsideVirtual`) which
+    /// fires on fence-rect changes.
     private static func sweepVirtual() {
         guard sweepEnabled else { return }
         guard !suspendedForLock else { return }
         guard !destroyInFlight else { return }
         guard let virtualRect = _cursorFenceVirtualRect else { return }
 
-        // Cursor backstop — covers warps that don't fire mouseMoved (login
-        // restore, app launch, post-config-change cursor placement). This
-        // path uses CGWarpMouseCursorPosition and works regardless of the
-        // SLS cross-process limitation that blocks window-move attempts.
+        // Cursor backstop.
         rescueCursorIfInsideVirtual()
 
-        let mainBounds = CGDisplayBounds(CGMainDisplayID())
-        let myPID = ProcessInfo.processInfo.processIdentifier
-        let untouchableNames: Set<String> = [
-            "WindowServer", "Dock", "loginwindow", "Notification Center"
-        ]
-
+        // Spotlight check.
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return }
-
-        let conn = CGSMainConnectionID()
-        var attempted = 0
-        var moved = 0
-        var skippedFailedBefore = 0
 
         for window in windowList {
             guard let boundsDict = window[kCGWindowBounds as String] as? [String: Any] else { continue }
@@ -387,66 +385,47 @@ enum VirtualDisplay {
             let h = (boundsDict["Height"] as? NSNumber)?.doubleValue ?? 0
             guard w > 0, h > 0 else { continue }
             let frame = CGRect(x: x, y: y, width: w, height: h)
-            // Only fully-contained windows. A window the user dragged so its
-            // right edge sits in the virtual is intentional and stays put.
             guard virtualRect.contains(frame) else { continue }
             guard let pid = window[kCGWindowOwnerPID as String] as? pid_t else { continue }
-            if pid == myPID { continue }
-            let ownerName = (window[kCGWindowOwnerName as String] as? String) ?? "?"
-            if untouchableNames.contains(ownerName) { continue }
-            // Skip Jorvik apps — the user's own utilities (e.g. Displaperture)
-            // legitimately use the virtual as a hidden render target. We must
-            // never yank their windows.
-            if let app = NSRunningApplication(processIdentifier: pid),
-               let bundle = app.bundleIdentifier,
-               bundle.hasPrefix("cc.jorviksoftware.") {
-                continue
-            }
-            guard let winID = (window[kCGWindowNumber as String] as? NSNumber)?.uint32Value else { continue }
 
-            // Persistent failure blacklist — SLSMoveWindow returns rc=1000
-            // (kCGErrorFailure) when the target window is owned by a
-            // different process and SLS won't honour the move from our
-            // connection. Confirmed empirically 2026-05-08 — cross-process
-            // SLSMoveWindow doesn't work without entitlements we don't ship
-            // with. Skip the window once we've seen it fail twice; revisit
-            // on virtual destroy/recreate.
-            if sweepFailedWinIDs.contains(winID) {
-                skippedFailedBefore += 1
-                continue
-            }
-
-            var origin = CGPoint(
-                x: mainBounds.midX - frame.width / 2,
-                y: mainBounds.midY - frame.height / 2
-            )
-            if origin.x < mainBounds.minX { origin.x = mainBounds.minX }
-            if origin.y < mainBounds.minY { origin.y = mainBounds.minY }
-
-            let rc = SLSMoveWindow(conn, winID, origin)
-            attempted += 1
-            let layer = (window[kCGWindowLayer as String] as? Int) ?? 0
-            if rc == 0 {
-                moved += 1
-                sweepFailureCounts[winID] = nil
-                aslog("sweep: moved pid=\(pid) (\(ownerName)) winID=\(winID) layer=\(layer) frame=\(Int(frame.width))x\(Int(frame.height)) → (\(Int(origin.x)),\(Int(origin.y)))")
-            } else {
-                let fails = (sweepFailureCounts[winID] ?? 0) + 1
-                sweepFailureCounts[winID] = fails
-                if fails >= sweepFailureLimit {
-                    sweepFailedWinIDs.insert(winID)
-                    aslog("sweep: BLACKLIST pid=\(pid) (\(ownerName)) winID=\(winID) layer=\(layer) — \(fails) failures (rc=\(rc)); won't retry until virtual recreated")
+            if isSpotlight(pid: pid, ownerName: window[kCGWindowOwnerName as String] as? String) {
+                let now = Date()
+                if now.timeIntervalSince(lastSpotlightDismiss) >= spotlightDismissCooldown {
+                    postEscape()
+                    lastSpotlightDismiss = now
+                    aslog("sweep: Spotlight on virtual at \(NSStringFromRect(NSRectFromCGRect(frame))) — sent Esc to dismiss")
                 }
-                // Don't log every individual failure attempt; the blacklist
-                // line above is the actionable record.
+                return  // Spotlight handled — no other windows worth checking on the same tick
             }
         }
+    }
 
-        if moved > 0 || (attempted > 0 && skippedFailedBefore == 0) {
-            // Only log the summary when we actually did something or
-            // attempted something new — silent ticks stay silent.
-            aslog("sweep: attempted \(attempted), moved \(moved), pre-blacklisted \(skippedFailedBefore)")
+    /// Spotlight identification — owner name "Spotlight" is the fast path,
+    /// bundle-ID `com.apple.Spotlight` is the belt-and-braces (handles
+    /// renames or future macOS structural changes). Returns false when we
+    /// can't resolve either signal — better to skip than wrongly Esc some
+    /// other process.
+    private static func isSpotlight(pid: pid_t, ownerName: String?) -> Bool {
+        if ownerName == "Spotlight" { return true }
+        if let app = NSRunningApplication(processIdentifier: pid),
+           let bundle = app.bundleIdentifier,
+           bundle == "com.apple.Spotlight" {
+            return true
         }
+        return false
+    }
+
+    /// Post a synthetic Esc keystroke. Used to dismiss Spotlight when its
+    /// window has rendered on the virtual (invisible to the user). After
+    /// dismissal the user re-invokes Spotlight, which follows the menu bar
+    /// and renders on the main display.
+    private static func postEscape() {
+        let src = CGEventSource(stateID: .hidSystemState)
+        let escapeKeyCode: CGKeyCode = 0x35
+        let down = CGEvent(keyboardEventSource: src, virtualKey: escapeKeyCode, keyDown: true)
+        let up = CGEvent(keyboardEventSource: src, virtualKey: escapeKeyCode, keyDown: false)
+        down?.post(tap: .cghidEventTap)
+        up?.post(tap: .cghidEventTap)
     }
 
     /// Start the sweep timer if the flag is on and not already running.
@@ -474,8 +453,6 @@ enum VirtualDisplay {
         guard sweepTimer != nil else { return }
         sweepTimer?.cancel()
         sweepTimer = nil
-        sweepFailedWinIDs.removeAll()
-        sweepFailureCounts.removeAll()
         aslog("sweep: timer stopped")
     }
 
