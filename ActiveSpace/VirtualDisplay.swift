@@ -122,6 +122,14 @@ enum VirtualDisplay {
     private static var sweepTimer: DispatchSourceTimer?
     private static let sweepInterval: DispatchTimeInterval = .milliseconds(150)
 
+    /// Window IDs for which SLSMoveWindow has failed twice in a row. Once a
+    /// window is here, the sweep doesn't try again (it's owned by a process
+    /// SLS won't let us move from this connection — log once and move on).
+    /// Cleared on virtual destroy so a fresh winID space gets a fresh budget.
+    private static var sweepFailedWinIDs: Set<UInt32> = []
+    private static var sweepFailureCounts: [UInt32: Int] = [:]
+    private static let sweepFailureLimit = 2
+
     private static var sweepEnabled: Bool {
         UserDefaults.standard.bool(forKey: "VirtualDisplaySweepEnabled")
     }
@@ -352,12 +360,14 @@ enum VirtualDisplay {
         guard let virtualRect = _cursorFenceVirtualRect else { return }
 
         // Cursor backstop — covers warps that don't fire mouseMoved (login
-        // restore, app launch, post-config-change cursor placement).
+        // restore, app launch, post-config-change cursor placement). This
+        // path uses CGWarpMouseCursorPosition and works regardless of the
+        // SLS cross-process limitation that blocks window-move attempts.
         rescueCursorIfInsideVirtual()
 
         let mainBounds = CGDisplayBounds(CGMainDisplayID())
         let myPID = ProcessInfo.processInfo.processIdentifier
-        let untouchable: Set<String> = [
+        let untouchableNames: Set<String> = [
             "WindowServer", "Dock", "loginwindow", "Notification Center"
         ]
 
@@ -365,7 +375,9 @@ enum VirtualDisplay {
         guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return }
 
         let conn = CGSMainConnectionID()
+        var attempted = 0
         var moved = 0
+        var skippedFailedBefore = 0
 
         for window in windowList {
             guard let boundsDict = window[kCGWindowBounds as String] as? [String: Any] else { continue }
@@ -381,8 +393,28 @@ enum VirtualDisplay {
             guard let pid = window[kCGWindowOwnerPID as String] as? pid_t else { continue }
             if pid == myPID { continue }
             let ownerName = (window[kCGWindowOwnerName as String] as? String) ?? "?"
-            if untouchable.contains(ownerName) { continue }
+            if untouchableNames.contains(ownerName) { continue }
+            // Skip Jorvik apps — the user's own utilities (e.g. Displaperture)
+            // legitimately use the virtual as a hidden render target. We must
+            // never yank their windows.
+            if let app = NSRunningApplication(processIdentifier: pid),
+               let bundle = app.bundleIdentifier,
+               bundle.hasPrefix("cc.jorviksoftware.") {
+                continue
+            }
             guard let winID = (window[kCGWindowNumber as String] as? NSNumber)?.uint32Value else { continue }
+
+            // Persistent failure blacklist — SLSMoveWindow returns rc=1000
+            // (kCGErrorFailure) when the target window is owned by a
+            // different process and SLS won't honour the move from our
+            // connection. Confirmed empirically 2026-05-08 — cross-process
+            // SLSMoveWindow doesn't work without entitlements we don't ship
+            // with. Skip the window once we've seen it fail twice; revisit
+            // on virtual destroy/recreate.
+            if sweepFailedWinIDs.contains(winID) {
+                skippedFailedBefore += 1
+                continue
+            }
 
             var origin = CGPoint(
                 x: mainBounds.midX - frame.width / 2,
@@ -392,13 +424,28 @@ enum VirtualDisplay {
             if origin.y < mainBounds.minY { origin.y = mainBounds.minY }
 
             let rc = SLSMoveWindow(conn, winID, origin)
-            moved += 1
+            attempted += 1
             let layer = (window[kCGWindowLayer as String] as? Int) ?? 0
-            aslog("sweep: SLSMoveWindow pid=\(pid) (\(ownerName)) winID=\(winID) layer=\(layer) frame=\(Int(frame.width))x\(Int(frame.height)) → (\(Int(origin.x)),\(Int(origin.y))) rc=\(rc)")
+            if rc == 0 {
+                moved += 1
+                sweepFailureCounts[winID] = nil
+                aslog("sweep: moved pid=\(pid) (\(ownerName)) winID=\(winID) layer=\(layer) frame=\(Int(frame.width))x\(Int(frame.height)) → (\(Int(origin.x)),\(Int(origin.y)))")
+            } else {
+                let fails = (sweepFailureCounts[winID] ?? 0) + 1
+                sweepFailureCounts[winID] = fails
+                if fails >= sweepFailureLimit {
+                    sweepFailedWinIDs.insert(winID)
+                    aslog("sweep: BLACKLIST pid=\(pid) (\(ownerName)) winID=\(winID) layer=\(layer) — \(fails) failures (rc=\(rc)); won't retry until virtual recreated")
+                }
+                // Don't log every individual failure attempt; the blacklist
+                // line above is the actionable record.
+            }
         }
 
-        if moved > 0 {
-            aslog("sweep: \(moved) window(s) moved off virtual")
+        if moved > 0 || (attempted > 0 && skippedFailedBefore == 0) {
+            // Only log the summary when we actually did something or
+            // attempted something new — silent ticks stay silent.
+            aslog("sweep: attempted \(attempted), moved \(moved), pre-blacklisted \(skippedFailedBefore)")
         }
     }
 
@@ -427,6 +474,8 @@ enum VirtualDisplay {
         guard sweepTimer != nil else { return }
         sweepTimer?.cancel()
         sweepTimer = nil
+        sweepFailedWinIDs.removeAll()
+        sweepFailureCounts.removeAll()
         aslog("sweep: timer stopped")
     }
 
