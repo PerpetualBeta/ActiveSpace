@@ -103,6 +103,29 @@ enum VirtualDisplay {
     /// producing the "skipping shrink" path observed 2026-04-25.
     private static var destroyInFlight = false
 
+    // MARK: - Off-virtual sweep
+    //
+    // Continuous trap that yanks anything appearing on the virtual back to
+    // main. Layered on top of the existing event-driven cursor fence and
+    // the on-fence-rect-change AX window rescue — the timer is the
+    // backstop for surfaces that materialise *between* events (Spotlight,
+    // system overlays, windows opened directly into the virtual's frame).
+    //
+    // Gated on `VirtualDisplaySweepEnabled` UserDefaults boolean (default
+    // false). To enable while we're iterating:
+    //
+    //     defaults write cc.jorviksoftware.ActiveSpace \
+    //         VirtualDisplaySweepEnabled -bool YES
+    //
+    // Quit + relaunch ActiveSpace.
+
+    private static var sweepTimer: DispatchSourceTimer?
+    private static let sweepInterval: DispatchTimeInterval = .milliseconds(150)
+
+    private static var sweepEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "VirtualDisplaySweepEnabled")
+    }
+
     /// Call once at app launch. Creates the virtual display if there's only one
     /// physical display, and installs an observer so it's added/removed as the
     /// user's display configuration changes.
@@ -302,9 +325,109 @@ enum VirtualDisplay {
             // rescue here. Idempotent — a no-op when nothing's on it.
             rescueCursorIfInsideVirtual()
             rescueWindowsInsideVirtual()
+            startSweepTimer()
         } else {
             aslog("CursorFence: disabled")
+            stopSweepTimer()
         }
+    }
+
+    /// Continuous off-virtual sweep. Runs on `sweepTimer` while the virtual
+    /// exists and is not parked, gated on the `VirtualDisplaySweepEnabled`
+    /// UserDefaults flag. Yanks any window fully contained inside the virtual
+    /// rect back to the centre of main, regardless of whether AX can reach
+    /// it — uses `SLSMoveWindow` directly so system-UI surfaces (Spotlight,
+    /// system overlays) are reachable without their owning process's
+    /// cooperation. Layered on top of the event-driven cursor fence and the
+    /// existing on-fence-rect-change AX rescue; this is the backstop for
+    /// surfaces that materialise *between* events.
+    ///
+    /// Skip-list: own bundle (don't yank our popover/settings sheet),
+    /// `WindowServer`, `Dock`, `loginwindow`, `Notification Center` — these
+    /// must never be moved by us regardless of where their windows appear.
+    private static func sweepVirtual() {
+        guard sweepEnabled else { return }
+        guard !suspendedForLock else { return }
+        guard !destroyInFlight else { return }
+        guard let virtualRect = _cursorFenceVirtualRect else { return }
+
+        // Cursor backstop — covers warps that don't fire mouseMoved (login
+        // restore, app launch, post-config-change cursor placement).
+        rescueCursorIfInsideVirtual()
+
+        let mainBounds = CGDisplayBounds(CGMainDisplayID())
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let untouchable: Set<String> = [
+            "WindowServer", "Dock", "loginwindow", "Notification Center"
+        ]
+
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return }
+
+        let conn = CGSMainConnectionID()
+        var moved = 0
+
+        for window in windowList {
+            guard let boundsDict = window[kCGWindowBounds as String] as? [String: Any] else { continue }
+            let x = (boundsDict["X"] as? NSNumber)?.doubleValue ?? 0
+            let y = (boundsDict["Y"] as? NSNumber)?.doubleValue ?? 0
+            let w = (boundsDict["Width"] as? NSNumber)?.doubleValue ?? 0
+            let h = (boundsDict["Height"] as? NSNumber)?.doubleValue ?? 0
+            guard w > 0, h > 0 else { continue }
+            let frame = CGRect(x: x, y: y, width: w, height: h)
+            // Only fully-contained windows. A window the user dragged so its
+            // right edge sits in the virtual is intentional and stays put.
+            guard virtualRect.contains(frame) else { continue }
+            guard let pid = window[kCGWindowOwnerPID as String] as? pid_t else { continue }
+            if pid == myPID { continue }
+            let ownerName = (window[kCGWindowOwnerName as String] as? String) ?? "?"
+            if untouchable.contains(ownerName) { continue }
+            guard let winID = (window[kCGWindowNumber as String] as? NSNumber)?.uint32Value else { continue }
+
+            var origin = CGPoint(
+                x: mainBounds.midX - frame.width / 2,
+                y: mainBounds.midY - frame.height / 2
+            )
+            if origin.x < mainBounds.minX { origin.x = mainBounds.minX }
+            if origin.y < mainBounds.minY { origin.y = mainBounds.minY }
+
+            let rc = SLSMoveWindow(conn, winID, origin)
+            moved += 1
+            let layer = (window[kCGWindowLayer as String] as? Int) ?? 0
+            aslog("sweep: SLSMoveWindow pid=\(pid) (\(ownerName)) winID=\(winID) layer=\(layer) frame=\(Int(frame.width))x\(Int(frame.height)) → (\(Int(origin.x)),\(Int(origin.y))) rc=\(rc)")
+        }
+
+        if moved > 0 {
+            aslog("sweep: \(moved) window(s) moved off virtual")
+        }
+    }
+
+    /// Start the sweep timer if the flag is on and not already running.
+    /// Idempotent. Runs on the main queue so AX/CGS calls inside the handler
+    /// observe consistent UI state.
+    private static func startSweepTimer() {
+        guard sweepEnabled else { return }
+        guard sweepTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(
+            deadline: .now() + sweepInterval,
+            repeating: sweepInterval,
+            leeway: .milliseconds(50)
+        )
+        timer.setEventHandler { sweepVirtual() }
+        timer.resume()
+        sweepTimer = timer
+        aslog("sweep: timer started (interval 150ms)")
+    }
+
+    /// Cancel the sweep timer. Called from updateCursorFence(nil), teardown,
+    /// and any path that destroys the virtual. Safe to call when no timer is
+    /// running.
+    private static func stopSweepTimer() {
+        guard sweepTimer != nil else { return }
+        sweepTimer?.cancel()
+        sweepTimer = nil
+        aslog("sweep: timer stopped")
     }
 
     /// Warp the cursor to the centre of the main display if it's currently
@@ -460,6 +583,7 @@ enum VirtualDisplay {
             wnc.removeObserver(observer)
         }
         lockObservers.removeAll()
+        stopSweepTimer()
         if VirtualDisplayHelper.isCreated() {
             VirtualDisplayHelper.destroy()
         }
