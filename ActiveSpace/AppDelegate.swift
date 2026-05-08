@@ -910,7 +910,7 @@ private struct VirtualDisplaySizeSection: View {
 
             DiagnosticView(tick: diagnosticTick)
 
-            Text("Smaller is better for reducing cursor traps and Spotlight / screensaver mis-routing — but the virtual must stay large enough to register as an extended display. 1 × 1 puts macOS into mirror-source mode and breaks the system. Walk down from 640 × 480 until the diagnostic flips to bad, then go one step back up.")
+            Text("The virtual just needs to register as a real extended display — that's what flips NSScreen.screens.count from 1 to 2 and lets ActiveSpace's gesture path work. Walk down from 640 × 480 until the diagnostic goes red (size too small for macOS to register as extended — pivots into mirror-source mode at the extreme low end), then step one back up. 16 × 16 is the floor; 1 × 1 is reachable only by editing defaults manually.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -920,46 +920,66 @@ private struct VirtualDisplaySizeSection: View {
         let tick: Int
 
         var body: some View {
-            let count = NSScreen.screens.count
-            let ident = readDisplayIdentifier()
-            let countOK = count >= 2
-            let identOK = ident != "Main" && ident != "?" && !ident.isEmpty
-            let bothOK = countOK && identOK
+            let virtualID = VirtualDisplayHelper.displayID()
+            let virtualW = Int(VirtualDisplayHelper.currentWidth())
+            let virtualH = Int(VirtualDisplayHelper.currentHeight())
+
+            let screenCount = NSScreen.screens.count
+            let virtualInScreens = NSScreen.screens.contains(where: {
+                let n = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+                return n?.uint32Value == virtualID
+            })
+            let virtualBounds: CGRect = virtualID != 0 ? CGDisplayBounds(virtualID) : .zero
+            let mirrorsAnything: Bool = NSScreen.screens.contains(where: {
+                let n = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+                guard let cg = n?.uint32Value else { return false }
+                return CGDisplayMirrorsDisplay(cg) != 0
+            })
+
+            let countOK = screenCount >= 2
+            let virtualOK = virtualID != 0 && virtualInScreens
+            let extendedOK = !mirrorsAnything && virtualBounds.width > 0 && virtualBounds.height > 0
+            let allOK = countOK && virtualOK && extendedOK
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("NSScreen count").font(.caption)
-                    Spacer()
-                    Text("\(count) \(countOK ? "✓" : "✗")")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(countOK ? .green : .red)
+                row("NSScreen count", "\(screenCount)", countOK)
+                row("Virtual registered",
+                    virtualID == 0 ? "no" : "cgID \(virtualID)",
+                    virtualOK)
+                row("Virtual bounds",
+                    virtualID == 0
+                        ? "—"
+                        : "\(Int(virtualBounds.width)) × \(Int(virtualBounds.height))",
+                    extendedOK)
+                row("No mirroring",
+                    mirrorsAnything ? "✗ MIRRORED" : "ok",
+                    !mirrorsAnything)
+
+                if virtualW != 0 && virtualH != 0
+                   && (virtualW != Int(virtualBounds.width) || virtualH != Int(virtualBounds.height)) {
+                    Text("Note: requested \(virtualW) × \(virtualH), got \(Int(virtualBounds.width)) × \(Int(virtualBounds.height)) (macOS chose nearest supported mode)")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
                 }
-                HStack {
-                    Text("Display Identifier").font(.caption)
-                    Spacer()
-                    Text("\(short(ident)) \(identOK ? "✓" : "✗")")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(identOK ? .green : .red)
-                }
-                Text(bothOK
-                     ? "Both flips OK — this size is viable."
-                     : "Size doesn't trigger the flips we need.")
+
+                Text(allOK
+                     ? "Virtual is a healthy extended display — this size works."
+                     : "Virtual not registered as extended — size too small or system in mirror state.")
                     .font(.caption2)
-                    .foregroundStyle(bothOK ? .green : .orange)
+                    .foregroundStyle(allOK ? .green : .orange)
             }
             .id(tick)
         }
 
-        private func readDisplayIdentifier() -> String {
-            guard let arr = CGSCopyManagedDisplaySpaces(CGSMainConnectionID()) as? [[String: Any]] else { return "?" }
-            guard let first = arr.first else { return "?" }
-            if let s = first["Display Identifier"] as? String { return s }
-            return "?"
-        }
-
-        private func short(_ s: String) -> String {
-            if s.count <= 14 { return s }
-            return String(s.prefix(8)) + "…"
+        @ViewBuilder
+        private func row(_ label: String, _ value: String, _ ok: Bool) -> some View {
+            HStack {
+                Text(label).font(.caption)
+                Spacer()
+                Text("\(value) \(ok ? "✓" : "✗")")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(ok ? .green : .red)
+            }
         }
     }
 }
