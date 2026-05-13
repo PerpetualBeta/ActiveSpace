@@ -137,6 +137,7 @@ enum VirtualDisplay {
     /// physical display, and installs an observer so it's added/removed as the
     /// user's display configuration changes.
     static func startManaging() {
+        MenuBarResetGate.install()
         startCursorFence()
         reconcile()
 
@@ -676,10 +677,16 @@ enum VirtualDisplay {
             // coordinate-space corruption from any anomalous virtual placement
             // (e.g. the Y=-480 we observed under display flapping) that might
             // not have been healed by an in-life reset.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                aslog("Post-destroy settled menu-bar reset")
-                Self.resetAllMenuBars()
-            }
+            //
+            // Routed through MenuBarResetGate: SLSSpaceResetMenuBar invoked
+            // mid-reconfig was correlated with a WindowServer SIGABRT in
+            // iosurface_create_common during display hot-swap (crash report
+            // 2026-05-13). The gate defers the actual call until the CG
+            // reconfiguration callback signals end-of-config + 200ms quiet
+            // period, which subsumes (and is more precise than) the prior
+            // fixed 1.0s asyncAfter.
+            aslog("Post-destroy menu-bar reset requested (gated)")
+            MenuBarResetGate.request()
         }
 
         // Whenever screen params change, macOS may silently reposition the
@@ -786,12 +793,34 @@ enum VirtualDisplay {
     private static func firePendingPostCreateReset() {
         guard pendingPostCreateReset else { return }
         pendingPostCreateReset = false
-        aslog("Post-create menu-bar reset (position verified)")
-        resetAllMenuBars()
+        // Position verification ran inside a CGBeginDisplayConfiguration /
+        // CGCompleteDisplayConfiguration pair, so a CG reconfig callback
+        // may still be in flight. Route through the gate rather than calling
+        // resetAllMenuBars directly — see MenuBarResetGate for rationale.
+        aslog("Post-create menu-bar reset requested (gated, position verified)")
+        MenuBarResetGate.request()
     }
 
     /// Calls SLSSpaceResetMenuBar on every user space across all displays.
+    ///
+    /// **Kill switch:** set `MenuBarResetDisabled` in UserDefaults to skip the
+    /// SLS calls entirely (the gate and surrounding logging still run, so the
+    /// log shows exactly when a reset *would* have fired). Used to bisect
+    /// whether SLSSpaceResetMenuBar is the trigger for the WindowServer
+    /// SIGABRT in iosurface_create_common during display hot-swap (crash
+    /// report 2026-05-13). Disable with:
+    ///
+    ///     defaults write cc.jorviksoftware.ActiveSpace \
+    ///         MenuBarResetDisabled -bool YES
+    ///
+    /// Quit + relaunch ActiveSpace. Re-enable by setting to NO or deleting
+    /// the key. Key is negative so the default (unset = false) leaves
+    /// production behaviour unchanged.
     static func resetAllMenuBars() {
+        if UserDefaults.standard.bool(forKey: "MenuBarResetDisabled") {
+            aslog("resetAllMenuBars: skipped — MenuBarResetDisabled is set")
+            return
+        }
         let conn = CGSMainConnectionID()
         guard let displays = CGSCopyManagedDisplaySpaces(conn) as? [[String: Any]] else { return }
         for display in displays {
@@ -825,5 +854,98 @@ enum VirtualDisplay {
             count += 1
         }
         return count
+    }
+}
+
+// MARK: - Menu-bar reset gating
+
+/// Defers `VirtualDisplay.resetAllMenuBars()` until the system has finished
+/// applying a display reconfiguration.
+///
+/// **Why:** `SLSSpaceResetMenuBar` forces WindowServer to re-allocate the
+/// per-connection menu-bar `IOSurface` for every space. Calling it while a
+/// display reconfiguration is still in flight has been correlated with a
+/// WindowServer `SIGABRT` in `iosurface_create_common` during display
+/// hot-swap (crash report 2026-05-13, MacBook Pro driving 5 externals + the
+/// virtual). The notification we previously keyed off
+/// (`NSApplication.didChangeScreenParametersNotification`) arrives *during*
+/// the reconfig window, not after it. The CG reconfiguration callback is
+/// the precise signal: it pairs a begin-flag call with a matching end-flag
+/// call per affected display, so we know when the system has settled.
+///
+/// **Behaviour:** A `request()` either fires immediately (with a 200ms quiet
+/// period to absorb cascaded reconfigs — wake-from-sleep produces two
+/// rounds in practice) or defers until the in-flight counter returns to
+/// zero. Repeated requests while pending coalesce into one reset. All state
+/// mutation hops to the main thread so there's a single owner.
+enum MenuBarResetGate {
+
+    /// Pair counter: incremented on each `.beginConfigurationFlag` callback,
+    /// decremented on each matching end-flag callback. Non-zero means a
+    /// system reconfiguration is in progress and the gate is closed.
+    private static var inFlightCount = 0
+
+    /// True between `request()` and the corresponding flush. Multiple
+    /// requests while pending coalesce into one reset.
+    private static var requestPending = false
+
+    private static var flushWorkItem: DispatchWorkItem?
+    private static var installed = false
+
+    /// Quiet period after `inFlightCount` returns to zero before flushing.
+    /// 200ms is enough for the second round of a wake-from-sleep cascade to
+    /// arrive without being painted over by an early reset.
+    private static let quietPeriod: TimeInterval = 0.2
+
+    /// Install the CG reconfiguration callback. Idempotent. Call once at launch.
+    static func install() {
+        guard !installed else { return }
+        installed = true
+        CGDisplayRegisterReconfigurationCallback(cgCallback, nil)
+        aslog("MenuBarResetGate: installed")
+    }
+
+    /// Ask the gate to issue a `resetAllMenuBars()` call. Fires after the
+    /// current reconfiguration (if any) settles, plus the quiet period.
+    static func request() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        requestPending = true
+        aslog("MenuBarResetGate: request (inFlight=\(inFlightCount))")
+        scheduleFlushIfPossible()
+    }
+
+    /// CG calls this on its own thread; we hop to main so every read/write
+    /// of the static state happens on a single queue.
+    private static let cgCallback: CGDisplayReconfigurationCallBack = { _, flags, _ in
+        DispatchQueue.main.async {
+            if flags.contains(.beginConfigurationFlag) {
+                inFlightCount += 1
+                // A new reconfig started — any in-progress flush is now
+                // premature. Cancel it; the matching end callback will
+                // reschedule.
+                flushWorkItem?.cancel()
+                flushWorkItem = nil
+            } else {
+                inFlightCount = max(0, inFlightCount - 1)
+                scheduleFlushIfPossible()
+            }
+        }
+    }
+
+    private static func scheduleFlushIfPossible() {
+        guard requestPending, inFlightCount == 0 else { return }
+        flushWorkItem?.cancel()
+        let work = DispatchWorkItem {
+            // Re-check at fire time: a fresh begin callback may have
+            // arrived between scheduling and now (it would have cancelled
+            // this work item; defensive check anyway).
+            guard inFlightCount == 0, requestPending else { return }
+            requestPending = false
+            flushWorkItem = nil
+            aslog("MenuBarResetGate: flush — invoking resetAllMenuBars")
+            VirtualDisplay.resetAllMenuBars()
+        }
+        flushWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + quietPeriod, execute: work)
     }
 }
