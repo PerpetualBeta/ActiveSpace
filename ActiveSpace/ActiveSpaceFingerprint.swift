@@ -84,33 +84,34 @@ struct ActiveSpaceFingerprint: Equatable, CustomStringConvertible {
             return "\(short)\(marker)"
         }.joined(separator: ",")
         // `displays` is sourced from NSScreen.screens, which collapses mirror
-        // sets to a single entry. Surface the underlying active-display count
-        // and any mirror relationships so the log reveals mirror state at a
-        // glance (NSScreen=1 + active=2 + mirror master/slave both listed →
-        // user is mirroring two externals). Diagnostic only — the underlying
-        // `displays` field is unchanged so drift-detection still keys off the
-        // AppKit-visible state.
-        return "displays=\(displays.count) main=\(mainDisplayID) mainOrigin=(\(Int(mainBounds.origin.x)),\(Int(mainBounds.origin.y))) mainSize=\(Int(mainBounds.width))x\(Int(mainBounds.height)) screens=[\(screensDesc)] mirrors=[\(Self.mirrorSummary())] spaces=[\(spacesDesc)]"
+        // sets to a single entry. When a mirror set is actually present we
+        // append a `mirror=[...]` segment listing the master and slaves so
+        // the log surfaces the cause of any NSScreen-vs-CG mismatch. In the
+        // common no-mirror case the segment is omitted entirely — no point
+        // adding a "mirrors=" label that misleads when mirroring is off.
+        let mirrorSeg = Self.mirrorSegment().map { " \($0)" } ?? ""
+        return "displays=\(displays.count) main=\(mainDisplayID) mainOrigin=(\(Int(mainBounds.origin.x)),\(Int(mainBounds.origin.y))) mainSize=\(Int(mainBounds.width))x\(Int(mainBounds.height)) screens=[\(screensDesc)]\(mirrorSeg) spaces=[\(spacesDesc)]"
     }
 
-    /// Summary of active displays + mirror relationships. Empty string when
-    /// there are no mirror slaves (the common case). Format example:
-    /// `active=2 slaves=[id=7→2]` — display 7 is slaved to (mirroring) 2.
-    private static func mirrorSummary() -> String {
+    /// Returns a `mirror=[id=X MASTER, id=Y→X]`-style segment iff one or more
+    /// active displays are part of a mirror set, else nil. Detection uses
+    /// `CGDisplayIsInMirrorSet` so we include the master (whose
+    /// `CGDisplayMirrorsDisplay` returns 0) as well as the slaves.
+    private static func mirrorSegment() -> String? {
         var displayCount: UInt32 = 0
         guard CGGetActiveDisplayList(0, nil, &displayCount) == .success,
-              displayCount > 0 else { return "active=0" }
+              displayCount > 0 else { return nil }
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
         guard CGGetActiveDisplayList(displayCount, &ids, &displayCount) == .success else {
-            return "active=?"
+            return nil
         }
         let active = ids.prefix(Int(displayCount))
-        let slaves = active.compactMap { id -> String? in
+        let inMirror = active.filter { CGDisplayIsInMirrorSet($0) != 0 }
+        guard !inMirror.isEmpty else { return nil }
+        let parts = inMirror.map { id -> String in
             let mirrored = CGDisplayMirrorsDisplay(id)
-            guard mirrored != 0 else { return nil }   // not a mirror slave
-            return "id=\(id)→\(mirrored)"
+            return mirrored == 0 ? "id=\(id) MASTER" : "id=\(id)→\(mirrored)"
         }
-        if slaves.isEmpty { return "active=\(displayCount)" }
-        return "active=\(displayCount) slaves=[\(slaves.joined(separator: ", "))]"
+        return "mirror=[\(parts.joined(separator: ", "))]"
     }
 }
