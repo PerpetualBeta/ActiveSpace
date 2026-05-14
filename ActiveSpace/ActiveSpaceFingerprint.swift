@@ -83,6 +83,34 @@ struct ActiveSpaceFingerprint: Equatable, CustomStringConvertible {
             let marker = (uuid == activeSpaceUUID) ? "*" : ""
             return "\(short)\(marker)"
         }.joined(separator: ",")
-        return "displays=\(displays.count) main=\(mainDisplayID) mainOrigin=(\(Int(mainBounds.origin.x)),\(Int(mainBounds.origin.y))) mainSize=\(Int(mainBounds.width))x\(Int(mainBounds.height)) screens=[\(screensDesc)] spaces=[\(spacesDesc)]"
+        // `displays` is sourced from NSScreen.screens, which collapses mirror
+        // sets to a single entry. Surface the underlying active-display count
+        // and any mirror relationships so the log reveals mirror state at a
+        // glance (NSScreen=1 + active=2 + mirror master/slave both listed →
+        // user is mirroring two externals). Diagnostic only — the underlying
+        // `displays` field is unchanged so drift-detection still keys off the
+        // AppKit-visible state.
+        return "displays=\(displays.count) main=\(mainDisplayID) mainOrigin=(\(Int(mainBounds.origin.x)),\(Int(mainBounds.origin.y))) mainSize=\(Int(mainBounds.width))x\(Int(mainBounds.height)) screens=[\(screensDesc)] mirrors=[\(Self.mirrorSummary())] spaces=[\(spacesDesc)]"
+    }
+
+    /// Summary of active displays + mirror relationships. Empty string when
+    /// there are no mirror slaves (the common case). Format example:
+    /// `active=2 slaves=[id=7→2]` — display 7 is slaved to (mirroring) 2.
+    private static func mirrorSummary() -> String {
+        var displayCount: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &displayCount) == .success,
+              displayCount > 0 else { return "active=0" }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
+        guard CGGetActiveDisplayList(displayCount, &ids, &displayCount) == .success else {
+            return "active=?"
+        }
+        let active = ids.prefix(Int(displayCount))
+        let slaves = active.compactMap { id -> String? in
+            let mirrored = CGDisplayMirrorsDisplay(id)
+            guard mirrored != 0 else { return nil }   // not a mirror slave
+            return "id=\(id)→\(mirrored)"
+        }
+        if slaves.isEmpty { return "active=\(displayCount)" }
+        return "active=\(displayCount) slaves=[\(slaves.joined(separator: ", "))]"
     }
 }

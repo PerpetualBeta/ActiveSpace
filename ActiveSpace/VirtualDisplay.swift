@@ -834,23 +834,33 @@ enum VirtualDisplay {
         }
     }
 
-    /// Counts NSScreen.screens excluding our own virtual display if present.
+    /// Counts active displays excluding our own virtual display if present.
     /// Matches our virtual by its `CGDirectDisplayID` (captured synchronously
     /// at create time) rather than by UUID — which is lazily resolved and
     /// therefore racy right after creation. The direct-ID comparison is
     /// stable and cheap.
+    ///
+    /// **Why CGGetActiveDisplayList, not NSScreen.screens.** AppKit collapses
+    /// a mirror set into a single `NSScreen` for the master display, so a
+    /// user mirroring two externals would read as `real=1` and we'd
+    /// pointlessly create the 640×480 virtual — the exact symptom hit on
+    /// 2026-05-14 (lid-closed clamshell + two landscape externals mirrored).
+    /// CGGetActiveDisplayList enumerates every member of the active
+    /// arrangement, mirror slaves included, so a mirrored two-display
+    /// setup correctly reports 2.
     private static func physicalDisplayCount() -> Int {
         let virtualID = VirtualDisplayHelper.displayID()   // 0 if no virtual
+
+        var displayCount: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &displayCount) == .success,
+              displayCount > 0 else { return 0 }
+
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
+        guard CGGetActiveDisplayList(displayCount, &displays, &displayCount) == .success else { return 0 }
+
         var count = 0
-        for screen in NSScreen.screens {
-            guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
-                count += 1
-                continue
-            }
-            let cgID = CGDirectDisplayID(n.uint32Value)
-            if virtualID != 0 && cgID == virtualID {
-                continue   // our own virtual — don't count as physical
-            }
+        for id in displays.prefix(Int(displayCount)) {
+            if virtualID != 0 && id == virtualID { continue }
             count += 1
         }
         return count
