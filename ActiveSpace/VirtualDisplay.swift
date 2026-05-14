@@ -890,12 +890,21 @@ enum MenuBarResetGate {
     private static var requestPending = false
 
     private static var flushWorkItem: DispatchWorkItem?
+    private static var maxDeferralWorkItem: DispatchWorkItem?
     private static var installed = false
 
     /// Quiet period after `inFlightCount` returns to zero before flushing.
     /// 200ms is enough for the second round of a wake-from-sleep cascade to
     /// arrive without being painted over by an early reset.
     private static let quietPeriod: TimeInterval = 0.2
+
+    /// Hard cap on how long a request can be deferred. Backstops two
+    /// failure modes observed in the wild (2026-05-14 wake-from-sleep
+    /// log): begin/end callback pairs that don't balance back to zero
+    /// (leaving the gate closed forever) and slow cascades of reconfigs
+    /// that keep re-cancelling the quiet-period flush. After this much
+    /// real time, we fire the reset regardless of inFlightCount.
+    private static let maxDeferral: TimeInterval = 2.0
 
     /// Install the CG reconfiguration callback. Idempotent. Call once at launch.
     static func install() {
@@ -906,11 +915,16 @@ enum MenuBarResetGate {
     }
 
     /// Ask the gate to issue a `resetAllMenuBars()` call. Fires after the
-    /// current reconfiguration (if any) settles, plus the quiet period.
+    /// current reconfiguration (if any) settles, plus the quiet period,
+    /// or after `maxDeferral` regardless.
     static func request() {
         dispatchPrecondition(condition: .onQueue(.main))
+        // First request starts the safety timer; further requests while
+        // pending coalesce and don't extend the deadline.
+        let firstRequest = !requestPending
         requestPending = true
-        aslog("MenuBarResetGate: request (inFlight=\(inFlightCount))")
+        aslog("MenuBarResetGate: request (inFlight=\(inFlightCount), firstRequest=\(firstRequest))")
+        if firstRequest { armMaxDeferralTimer() }
         scheduleFlushIfPossible()
     }
 
@@ -920,6 +934,7 @@ enum MenuBarResetGate {
         DispatchQueue.main.async {
             if flags.contains(.beginConfigurationFlag) {
                 inFlightCount += 1
+                aslog("MenuBarResetGate: CG begin → inFlight=\(inFlightCount)")
                 // A new reconfig started — any in-progress flush is now
                 // premature. Cancel it; the matching end callback will
                 // reschedule.
@@ -927,6 +942,7 @@ enum MenuBarResetGate {
                 flushWorkItem = nil
             } else {
                 inFlightCount = max(0, inFlightCount - 1)
+                aslog("MenuBarResetGate: CG end flags=\(String(flags.rawValue, radix: 16)) → inFlight=\(inFlightCount)")
                 scheduleFlushIfPossible()
             }
         }
@@ -940,12 +956,35 @@ enum MenuBarResetGate {
             // arrived between scheduling and now (it would have cancelled
             // this work item; defensive check anyway).
             guard inFlightCount == 0, requestPending else { return }
-            requestPending = false
-            flushWorkItem = nil
-            aslog("MenuBarResetGate: flush — invoking resetAllMenuBars")
-            VirtualDisplay.resetAllMenuBars()
+            performFlush(reason: "quiet-period")
         }
         flushWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + quietPeriod, execute: work)
+    }
+
+    /// Schedule the hard-cap fallback that fires regardless of inFlightCount.
+    /// Cancelled on a successful flush; re-armed by the next first-request.
+    private static func armMaxDeferralTimer() {
+        maxDeferralWorkItem?.cancel()
+        let work = DispatchWorkItem {
+            guard requestPending else { return }
+            aslog("MenuBarResetGate: max-deferral hit (inFlight=\(inFlightCount)) — forcing flush")
+            performFlush(reason: "max-deferral")
+        }
+        maxDeferralWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + maxDeferral, execute: work)
+    }
+
+    /// Common flush implementation. Clears all pending state, cancels both
+    /// timers, then invokes the reset. Safe to call from either the quiet-
+    /// period work item or the max-deferral fallback.
+    private static func performFlush(reason: String) {
+        requestPending = false
+        flushWorkItem?.cancel()
+        flushWorkItem = nil
+        maxDeferralWorkItem?.cancel()
+        maxDeferralWorkItem = nil
+        aslog("MenuBarResetGate: flush (\(reason)) — invoking resetAllMenuBars")
+        VirtualDisplay.resetAllMenuBars()
     }
 }
