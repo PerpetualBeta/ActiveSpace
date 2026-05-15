@@ -111,7 +111,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let observer = SpaceObserver()
     private var popover: NSPopover?
     private var cancellables = Set<AnyCancellable>()
-    let updateChecker = JorvikUpdateChecker(repoName: "ActiveSpace")
     let sparkleUserDriverDelegate = ActiveSpaceUserDriverDelegate()
     lazy var sparkleUpdater = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -214,12 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         updateIcon()
-        // Sparkle (sparkleUpdater) handles update polling now. Legacy
-        // JorvikUpdateChecker instance is kept around because
-        // JorvikSettingsView.showWindow still requires one as a parameter,
-        // pending JorvikKit retirement (see infrastructure-open-follow-ups §11.5).
         _ = sparkleUpdater  // forces lazy init so Sparkle starts at launch
-        // updateChecker.checkOnSchedule()  // disabled — Sparkle owns this now
 
         observer.$currentSpaceIndex
             .receive(on: DispatchQueue.main)
@@ -601,10 +595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettings() {
-        JorvikSettingsView.showWindow(
-            appName: "ActiveSpace",
-            updateChecker: updateChecker
-        ) { [weak self] in
+        JorvikSettingsView.showWindow(appName: "ActiveSpace") { [weak self] in
             guard let delegate = self else { return EmptyView().eraseToAnyView() }
             return ActiveSpaceSettingsContent(delegate: delegate).eraseToAnyView()
         }
