@@ -10,6 +10,7 @@
 		5EF0B3792F95378700E097E2 /* ReconfigurationObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3752F95378700E097E2 /* ReconfigurationObserver.swift */; };
 		5EF0B37A2F95378700E097E2 /* DriftMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3762F95378700E097E2 /* DriftMonitor.swift */; };
 		5EF0B37B2F95378700E097E2 /* SpacesPlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3772F95378700E097E2 /* SpacesPlist.swift */; };
+		5EWF00012FB0000000000001 /* WindowFollow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EWF00022FB0000000000002 /* WindowFollow.swift */; };
 		5EF0B37D2F95378700E097E2 /* ActiveSpaceFingerprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3722F95378700E097E2 /* ActiveSpaceFingerprint.swift */; };
 		5EF0B3802F95380D00E097E2 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5EF0B37F2F95380D00E097E2 /* ServiceManagement.framework */; };
 		5EF0B3822F9538D300E097E2 /* cc.jorviksoftware.ActiveSpace.agent.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 5EF0B3742F95378700E097E2 /* cc.jorviksoftware.ActiveSpace.agent.plist */; };
@@ -25,12 +26,10 @@
 		AA000059 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000041 /* AboutView.swift */; };
 		AA000060 /* JorvikAboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000070 /* JorvikAboutView.swift */; };
 		AA000061 /* JorvikSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000071 /* JorvikSettingsView.swift */; };
-		AA000062 /* JorvikUpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000072 /* JorvikUpdateChecker.swift */; };
 		AA000063 /* JorvikMenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000073 /* JorvikMenuBuilder.swift */; };
 		AA000065 /* JorvikWindowHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000075 /* JorvikWindowHelper.swift */; };
 		AA000066 /* JorvikShortcutRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000076 /* JorvikShortcutRecorder.swift */; };
 		AA000067 /* VirtualDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000077 /* VirtualDisplay.swift */; };
-		AA000068 /* VirtualDisplayHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = AA000078 /* VirtualDisplayHelper.m */; };
 		AA000069 /* Logging.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000082 /* Logging.swift */; };
 		AA00006A /* TransitionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000083 /* TransitionOverlay.swift */; };
 		AA000091 /* SwitcherController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000090 /* SwitcherController.swift */; };
@@ -72,6 +71,7 @@
 		5EF0B3752F95378700E097E2 /* ReconfigurationObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconfigurationObserver.swift; sourceTree = "<group>"; };
 		5EF0B3762F95378700E097E2 /* DriftMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriftMonitor.swift; sourceTree = "<group>"; };
 		5EF0B3772F95378700E097E2 /* SpacesPlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesPlist.swift; sourceTree = "<group>"; };
+		5EWF00022FB0000000000002 /* WindowFollow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFollow.swift; sourceTree = "<group>"; };
 		5EF0B37F2F95380D00E097E2 /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
 		AA000030 /* ActiveSpaceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSpaceApp.swift; sourceTree = "<group>"; };
 		AA000031 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -88,13 +88,10 @@
 		AA000042 /* ActiveSpace.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ActiveSpace.entitlements; sourceTree = "<group>"; };
 		AA000070 /* JorvikAboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikAboutView.swift; sourceTree = "<group>"; };
 		AA000071 /* JorvikSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikSettingsView.swift; sourceTree = "<group>"; };
-		AA000072 /* JorvikUpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikUpdateChecker.swift; sourceTree = "<group>"; };
 		AA000073 /* JorvikMenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikMenuBuilder.swift; sourceTree = "<group>"; };
 		AA000075 /* JorvikWindowHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikWindowHelper.swift; sourceTree = "<group>"; };
 		AA000076 /* JorvikShortcutRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikShortcutRecorder.swift; sourceTree = "<group>"; };
 		AA000077 /* VirtualDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplay.swift; sourceTree = "<group>"; };
-		AA000078 /* VirtualDisplayHelper.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = VirtualDisplayHelper.m; sourceTree = "<group>"; };
-		AA000079 /* VirtualDisplayHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VirtualDisplayHelper.h; sourceTree = "<group>"; };
 		AA000081 /* ActiveSpace-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ActiveSpace-Bridging-Header.h"; sourceTree = "<group>"; };
 		AA000082 /* Logging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging.swift; sourceTree = "<group>"; };
 		AA000083 /* TransitionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransitionOverlay.swift; sourceTree = "<group>"; };
@@ -145,6 +142,7 @@
 				5EF0B3752F95378700E097E2 /* ReconfigurationObserver.swift */,
 				5EF0B3762F95378700E097E2 /* DriftMonitor.swift */,
 				5EF0B3772F95378700E097E2 /* SpacesPlist.swift */,
+				5EWF00022FB0000000000002 /* WindowFollow.swift */,
 				AA000030 /* ActiveSpaceApp.swift */,
 				AA000031 /* AppDelegate.swift */,
 				AA000032 /* CGSPrivate.swift */,
@@ -158,8 +156,6 @@
 				AA000041 /* AboutView.swift */,
 				AA000042 /* ActiveSpace.entitlements */,
 				AA000077 /* VirtualDisplay.swift */,
-				AA000078 /* VirtualDisplayHelper.m */,
-				AA000079 /* VirtualDisplayHelper.h */,
 				AA000081 /* ActiveSpace-Bridging-Header.h */,
 				AA000082 /* Logging.swift */,
 				AA000083 /* TransitionOverlay.swift */,
@@ -185,7 +181,6 @@
 			children = (
 				AA000070 /* JorvikAboutView.swift */,
 				AA000071 /* JorvikSettingsView.swift */,
-				AA000072 /* JorvikUpdateChecker.swift */,
 				AA000073 /* JorvikMenuBuilder.swift */,
 				AA000075 /* JorvikWindowHelper.swift */,
 				AA000076 /* JorvikShortcutRecorder.swift */,
@@ -205,7 +200,7 @@
 				AA000015 /* Frameworks */,
 				AA000016 /* Resources */,
 				5EF0B3812F95386B00E097E2 /* CopyFiles */,
-				5E2FCBE32FA6B8D100DA38EE /* Embed MouseCatcher */,
+				5E2FCBE42FA6B8D100DA38EE /* Embed VirtualDisplayHost */,
 				AA000603 /* Embed Frameworks */,
 			);
 			buildRules = (
@@ -263,7 +258,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		5E2FCBE32FA6B8D100DA38EE /* Embed MouseCatcher */ = {
+		5E2FCBE42FA6B8D100DA38EE /* Embed VirtualDisplayHost */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -273,14 +268,14 @@
 			);
 			inputPaths = (
 			);
-			name = "Embed MouseCatcher";
+			name = "Embed VirtualDisplayHost";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "  # Build MouseCatcher (signed, hardened-runtime) and embed it inside\n  # ActiveSpace.app/Contents/Helpers/. Self-deploy on launch handles\n  # placing it at /Applications/Utilities/MouseCatcher.app.\n  \"${SRCROOT}/MouseCatcher/build.sh\"\n\n  mkdir -p \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers\"\n  rm -rf \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers/MouseCatcher.app\"\n  cp -R \"${SRCROOT}/MouseCatcher/MouseCatcher.app\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers/MouseCatcher.app\"\n";
+			shellScript = "  # Build VirtualDisplayHost (signed, hardened-runtime) and embed it\n  # inside ActiveSpace.app/Contents/Helpers/. ActiveSpace launches it\n  # at runtime via Process(); the helper owns the off-screen virtual\n  # display that disarms the macOS-16 single-monitor gesture-routing\n  # bug.\n  \"${SRCROOT}/VirtualDisplayHost/build.sh\"\n\n  mkdir -p \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers\"\n  rm -rf \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers/VirtualDisplayHost.app\"\n  cp -R \"${SRCROOT}/VirtualDisplayHost/VirtualDisplayHost.app\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers/VirtualDisplayHost.app\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -292,6 +287,7 @@
 				AA000050 /* ActiveSpaceApp.swift in Sources */,
 				AA000051 /* AppDelegate.swift in Sources */,
 				AA000052 /* CGSPrivate.swift in Sources */,
+				5EWF00012FB0000000000001 /* WindowFollow.swift in Sources */,
 				5EF0B3792F95378700E097E2 /* ReconfigurationObserver.swift in Sources */,
 				5EF0B37A2F95378700E097E2 /* DriftMonitor.swift in Sources */,
 				5EF0B37B2F95378700E097E2 /* SpacesPlist.swift in Sources */,
@@ -303,13 +299,11 @@
 				AA000059 /* AboutView.swift in Sources */,
 				AA000060 /* JorvikAboutView.swift in Sources */,
 				AA000061 /* JorvikSettingsView.swift in Sources */,
-				AA000062 /* JorvikUpdateChecker.swift in Sources */,
 				AA000063 /* JorvikMenuBuilder.swift in Sources */,
 				AA000065 /* JorvikWindowHelper.swift in Sources */,
 				AA000066 /* JorvikShortcutRecorder.swift in Sources */,
 				AA000098 /* JorvikHotkeyRegistry.swift in Sources */,
 				AA000067 /* VirtualDisplay.swift in Sources */,
-				AA000068 /* VirtualDisplayHelper.m in Sources */,
 				AA000069 /* Logging.swift in Sources */,
 				AA00006A /* TransitionOverlay.swift in Sources */,
 				AA000091 /* SwitcherController.swift in Sources */,

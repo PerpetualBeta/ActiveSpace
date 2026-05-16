@@ -15,36 +15,54 @@ enum DriftTrigger: String {
 }
 
 /// Subscribes to ReconfigurationObserver, classifies each event against
-/// the drift criteria, and logs what it sees. Purely diagnostic — does
-/// not terminate the app.
+/// the drift criteria, and **terminates the app on qualifying drift** so
+/// the launchd keep-alive agent can respawn it with a clean slate. Also
+/// logs before/after fingerprints for diagnostic value.
 ///
-/// An earlier design called for self-restart on drift via a launchd
-/// keep-alive agent. Two days of dry-run dogfooding across display
-/// plug/unplug, sleep/wake, space add/remove/reorder and screensaver
-/// cycles produced seven restart-worthy classifications and zero
-/// user-visible problems. ActiveSpace's in-memory state doesn't
-/// actually become unrecoverably stale under drift: SpaceObserver
-/// re-queries CGS from scratch on every refresh, VirtualDisplay's
-/// reconcile + enforceVirtualPosition + cursor fence handle the
-/// display-layer concerns, and the menu bar icon re-renders via
-/// @Published bindings on each refresh. The restart was a sledgehammer
-/// for a problem the finer-grained mitigations already solve.
+/// Restart was demoted to diagnostic-only in commit 041de05 on the theory
+/// that finer-grained mitigations (reconcile + enforceVirtualPosition +
+/// cursor fence) were sufficient. Restored 2026-05-16 after the
+/// mitigations turned out *not* to fully cover the cases users see in
+/// practice (single-display window drift, lingering virtual after
+/// ungraceful exit). Process respawn is the sledgehammer that brings the
+/// app back to known-good state without trying to patch every edge case
+/// in-place.
 ///
-/// This monitor is kept for its diagnostic value — future edge cases
-/// will show up here first, and the launchd keep-alive agent
-/// registered by AppDelegate still provides crash-resilience respawn
-/// even though drift-observed events no longer terminate.
+/// **Cooldown:** a dock-on-virtual restart suppresses the same trigger
+/// for 30s post-respawn (persisted via UserDefaults) so a stuck virtual
+/// doesn't loop us. **Dry-run mode:** set
+/// `defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.restartDryRun -bool YES`
+/// to log "verdict=RESTART" without terminating — useful when bisecting
+/// trigger thresholds.
 @MainActor
 final class DriftMonitor {
 
     private let relativeTriggerGrace: TimeInterval = 5.0
+    private let dockOnVirtualCooldown: TimeInterval = 30.0
+
+    // UserDefaults keys
+    private static let kLastRestartReason = "ActiveSpace.lastRestartReason"
+    private static let kLastRestartTime   = "ActiveSpace.lastRestartTime"
+    static let kDryRunMode                = "ActiveSpace.restartDryRun"
 
     private let launchDate: Date
     private let observer: ReconfigurationObserver
+    private var dockOnVirtualSuppressedUntil: Date?
 
     init(observer: ReconfigurationObserver) {
         self.observer = observer
         self.launchDate = Date()
+
+        // If we restarted for dock-on-virtual within the last 30s, hold off
+        // on re-firing that trigger — macOS either sorts itself out in this
+        // window or we keep the surface around for diagnosis.
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: Self.kLastRestartReason) == DriftTrigger.dockOnVirtual.rawValue,
+           let lastTime = defaults.object(forKey: Self.kLastRestartTime) as? Date,
+           Date().timeIntervalSince(lastTime) < dockOnVirtualCooldown {
+            dockOnVirtualSuppressedUntil = lastTime.addingTimeInterval(dockOnVirtualCooldown)
+            aslog("Post-restart cooldown active for dock-on-virtual until \(dockOnVirtualSuppressedUntil!)")
+        }
     }
 
     func start() {
@@ -88,13 +106,21 @@ final class DriftMonitor {
 
     private func evaluateAbsoluteTriggers(on fingerprint: ActiveSpaceFingerprint, appending triggers: inout [DriftTrigger]) {
         if fingerprint.mainIsSmall {
-            triggers.append(.dockOnVirtual)
+            if let until = dockOnVirtualSuppressedUntil, Date() < until {
+                aslog("  dock-on-virtual observed but suppressed by post-restart cooldown")
+            } else {
+                triggers.append(.dockOnVirtual)
+            }
         }
     }
 
-    /// Emit a drift verdict with full before/after context. `before` is nil
-    /// for startup absolute-trigger evaluations where there's no prior
-    /// fingerprint to diff against — in that case log the current state only.
+    /// Emit a drift verdict with full before/after context, persist the
+    /// restart reason for next-launch cooldown decisioning, and terminate
+    /// (unless dry-run is set). launchd respawns the process via the
+    /// keep-alive agent registered in AppDelegate.
+    ///
+    /// `before` is nil for startup absolute-trigger evaluations where
+    /// there's no prior fingerprint to diff against.
     private func logDrift(_ triggers: [DriftTrigger], before: ActiveSpaceFingerprint?, after: ActiveSpaceFingerprint) {
         if let before {
             aslog("  before: \(before)")
@@ -103,6 +129,19 @@ final class DriftMonitor {
             aslog("  state:  \(after)")
         }
         let list = triggers.map(\.rawValue).sorted().joined(separator: ",")
-        aslog("  drift-observed(\(list))")
+
+        if UserDefaults.standard.bool(forKey: Self.kDryRunMode) {
+            aslog("  verdict=RESTART(\(list)) — DRY RUN, not terminating")
+            return
+        }
+
+        // Persist for post-restart cooldown decisioning on next launch.
+        let defaults = UserDefaults.standard
+        defaults.set(list, forKey: Self.kLastRestartReason)
+        defaults.set(Date(), forKey: Self.kLastRestartTime)
+
+        aslog("  verdict=RESTART(\(list))")
+        aslog("Terminating for restart.")
+        NSApp.terminate(nil)
     }
 }

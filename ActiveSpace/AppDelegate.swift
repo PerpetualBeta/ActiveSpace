@@ -15,11 +15,13 @@ private var _upKeyCode: UInt16 = 0
 private var _upModifiers: CGEventFlags = []
 private var _downKeyCode: UInt16 = 0
 private var _downModifiers: CGEventFlags = []
+private var _followKeyCode: UInt16 = 0
+private var _followModifiers: CGEventFlags = []
 private var _rowWidth: Int = 0
 private var _switcherEnabled: Bool = false
 
 /// Action dispatched from the tap callback back to the main thread.
-private enum HotkeyAction { case next, prev, up, down }
+private enum HotkeyAction { case next, prev, up, down, followToggle }
 private var _hotkeyAction: HotkeyAction?
 
 /// The mask of modifier flags we care about when matching shortcuts.
@@ -61,6 +63,10 @@ private func hotkeyTapCallback(
         }
         if _rowWidth >= 2 && _downKeyCode != 0 && keyCode == _downKeyCode && modFlags == _downModifiers {
             DispatchQueue.main.async { _hotkeyAction = .down; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
+            return nil
+        }
+        if _followKeyCode != 0 && keyCode == _followKeyCode && modFlags == _followModifiers {
+            DispatchQueue.main.async { _hotkeyAction = .followToggle; NotificationCenter.default.post(name: .activeSpaceHotkey, object: nil) }
             return nil
         }
         if _switcherEnabled,
@@ -127,6 +133,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var upModifiers: NSEvent.ModifierFlags = [] { didSet { _upModifiers = upModifiers.cgEventFlags } }
     var downKeyCode: UInt16 = 0   { didSet { _downKeyCode = downKeyCode } }
     var downModifiers: NSEvent.ModifierFlags = [] { didSet { _downModifiers = downModifiers.cgEventFlags } }
+    var followKeyCode: UInt16 = 0   { didSet { _followKeyCode = followKeyCode } }
+    var followModifiers: NSEvent.ModifierFlags = [] { didSet { _followModifiers = followModifiers.cgEventFlags } }
 
     /// Conceptual grid row width. 0 = linear (default), ≥2 = grid mode active.
     /// Drives the popover layout and gates the Space Up / Space Down hotkeys.
@@ -151,14 +159,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         aslog("applicationDidFinishLaunching: NSScreen.screens.count=\(NSScreen.screens.count)")
         NSApp.setActivationPolicy(.accessory)
-
-        // Deploy the bundled MouseCatcher.app to /Applications/ if missing or
-        // older than the embedded copy. Spotlight needs it at a top-level
-        // path; the helper bundle inside our Contents/Helpers/ isn't
-        // discoverable. Synchronous (~50 ms file copy worst case) — async on
-        // a global queue raced the launchd handoff exit and didn't always
-        // get a chance to run.
-        Self.deployMouseCatcher()
 
         // Register the keep-alive agent on first launch so the app survives
         // crashes and respawns after self-restart on drift events. If this
@@ -278,65 +278,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
-    // MARK: - MouseCatcher self-deploy
-
-    /// Mirrors the embedded `Contents/Helpers/MouseCatcher.app` to
-    /// `/Applications/MouseCatcher.app` so Spotlight can find it. Idempotent
-    /// — skips when the deployed `CFBundleShortVersionString` already
-    /// matches the embedded one. Refuses to overwrite a foreign bundle
-    /// (different `CFBundleIdentifier`) at the same path.
-    ///
-    /// Why `/Applications/` and not `/Applications/Utilities/`: the
-    /// `Utilities` subfolder is owned by `root:wheel` mode 755 — even
-    /// admin users can't write there without elevation. `/Applications/`
-    /// itself is `drwxrwxr-x root:admin`, so admin-group users can deploy
-    /// without an authorisation prompt. Sibling-of-ActiveSpace install also
-    /// matches every other Jorvik utility's location.
-    static func deployMouseCatcher() {
-        let embeddedURL = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Helpers/MouseCatcher.app")
-        guard FileManager.default.fileExists(atPath: embeddedURL.path) else {
-            aslog("MouseCatcher: no embedded copy in this build, skipping deploy")
-            return
-        }
-
-        let deployedURL = URL(fileURLWithPath: "/Applications/MouseCatcher.app")
-        let embeddedID = readBundleString(at: embeddedURL, key: "CFBundleIdentifier")
-        let embeddedVersion = readBundleString(at: embeddedURL, key: "CFBundleShortVersionString")
-
-        if FileManager.default.fileExists(atPath: deployedURL.path) {
-            let deployedID = readBundleString(at: deployedURL, key: "CFBundleIdentifier")
-            let deployedVersion = readBundleString(at: deployedURL, key: "CFBundleShortVersionString")
-            if deployedID != embeddedID {
-                aslog("MouseCatcher: existing /Applications/MouseCatcher.app has bundle ID \(deployedID ?? "(unknown)") — refusing to overwrite")
-                return
-            }
-            if deployedVersion == embeddedVersion {
-                return  // already current
-            }
-            aslog("MouseCatcher: updating deployed copy \(deployedVersion ?? "?") → \(embeddedVersion ?? "?")")
-        }
-
-        do {
-            if FileManager.default.fileExists(atPath: deployedURL.path) {
-                try FileManager.default.removeItem(at: deployedURL)
-            }
-            try FileManager.default.copyItem(at: embeddedURL, to: deployedURL)
-            aslog("MouseCatcher: deployed v\(embeddedVersion ?? "?") to \(deployedURL.path)")
-        } catch {
-            aslog("MouseCatcher: deploy failed: \(error.localizedDescription)")
-        }
-    }
-
-    private static func readBundleString(at bundleURL: URL, key: String) -> String? {
-        let plistURL = bundleURL.appendingPathComponent("Contents/Info.plist")
-        guard let data = try? Data(contentsOf: plistURL),
-              let raw = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-              let plist = raw as? [String: Any]
-        else { return nil }
-        return plist[key] as? String
-    }
-
     // MARK: - Event tap
 
     private var hasShownInputMonitoringAlert = false
@@ -348,9 +289,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.keyUp.rawValue) |
             (1 << CGEventType.flagsChanged.rawValue)
+        // Tap location & position chosen to play nicely with keystroke
+        // rewriters like HyperKey, Karabiner-Elements, and similar tools
+        // that synthesize "Hyper" (shift+ctrl+opt+cmd) from a single
+        // physical key. Those tools install their own taps and need to
+        // see the raw event *before* we do so they can rewrite the
+        // modifier flags. Originally we were at .cgSessionEventTap with
+        // .headInsertEventTap — which placed us first in the chain at
+        // an early-ish layer, before the rewriter's transform applied.
+        // Result: a user hitting Caps Lock-bound-to-Hyper + Q would
+        // give us the raw Caps-Lock + Q event (no match), then HyperKey
+        // rewrote it to Hyper+Q for everyone downstream. The bindings
+        // that DID work were real-modifier combos (cmd+opt+arrows, etc.)
+        // that don't need rewriting.
+        //
+        // .cgAnnotatedSessionEventTap is the latest tap layer — after
+        // HID-level rewriters and after session-level rewriters — so
+        // by the time we see an event, every modifier-synthesising
+        // tool has had its turn. .tailAppendEventTap puts us last in
+        // our level's chain for the same reason (anyone else at this
+        // level still runs first).
         guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
+            tap: .cgAnnotatedSessionEventTap,
+            place: .tailAppendEventTap,
             options: .defaultTap,
             eventsOfInterest: mask,
             callback: hotkeyTapCallback,
@@ -394,6 +355,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .prev: SpaceSwitcher.switchPrev(rowWidth: rowWidth, observer: observer)
         case .up:   SpaceSwitcher.switchUp(rowWidth: rowWidth, observer: observer)
         case .down: SpaceSwitcher.switchDown(rowWidth: rowWidth, observer: observer)
+        case .followToggle: WindowFollow.toggle()
         }
     }
 
@@ -425,6 +387,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             downKeyCode = UInt16(dk)
             downModifiers = NSEvent.ModifierFlags(rawValue: UInt(dm))
         }
+        let fk = d.integer(forKey: "followWindowKeyCode")
+        let fm = d.integer(forKey: "followWindowModifiers")
+        if fk != 0 && fm != 0 {
+            followKeyCode = UInt16(fk)
+            followModifiers = NSEvent.ModifierFlags(rawValue: UInt(fm))
+        }
         rowWidth = d.integer(forKey: "rowWidth")           // 0 if absent
         switcherEnabled = d.bool(forKey: "switcherEnabled")
     }
@@ -439,6 +407,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         d.set(Int(upModifiers.rawValue), forKey: "upSpaceModifiers")
         d.set(Int(downKeyCode), forKey: "downSpaceKeyCode")
         d.set(Int(downModifiers.rawValue), forKey: "downSpaceModifiers")
+        d.set(Int(followKeyCode), forKey: "followWindowKeyCode")
+        d.set(Int(followModifiers.rawValue), forKey: "followWindowModifiers")
         republishHotkeys()
     }
 
@@ -471,6 +441,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                         modifiers: downModifiers,
                                         activeContext: .anywhere))
         }
+        if followKeyCode != 0 {
+            hotkeys.append(JorvikHotkey(actionTitle: "Toggle Follow App Across Spaces",
+                                        keyCode: followKeyCode,
+                                        modifiers: followModifiers,
+                                        activeContext: .anywhere))
+        }
         JorvikHotkeyRegistry.publish(hotkeys)
     }
 
@@ -500,6 +476,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func downShortcutDisplayString() -> String {
         guard downKeyCode != 0 else { return "Not set" }
         return JorvikShortcutPanel.displayString(keyCode: downKeyCode, modifiers: downModifiers)
+    }
+
+    func followShortcutDisplayString() -> String {
+        guard followKeyCode != 0 else { return "Not set" }
+        return JorvikShortcutPanel.displayString(keyCode: followKeyCode, modifiers: followModifiers)
     }
 
     // MARK: - Click handling
@@ -788,12 +769,28 @@ private struct ActiveSpaceSettingsContent: View {
                     )
                 }
 
+                JorvikShortcutRecorder(
+                    label: "Follow App Across Spaces",
+                    keyCode: Binding(
+                        get: { delegate.followKeyCode },
+                        set: { delegate.followKeyCode = $0 }
+                    ),
+                    modifiers: Binding(
+                        get: { delegate.followModifiers },
+                        set: { delegate.followModifiers = $0 }
+                    ),
+                    displayString: { delegate.followShortcutDisplayString() },
+                    onChanged: { delegate.saveShortcuts() },
+                    eventTapToDisable: delegate.currentEventTap
+                )
+                Text("Pins the frontmost app's windows to every Mission Control space — the same effect as right-clicking the Dock icon and choosing Options → Assign To → All Desktops. Toggle off and the app returns to the space it was on when you first toggled it.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
                 Text("To avoid conflicts, disable the matching shortcuts in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-
-            VirtualDisplaySizeSection()
 
             Section("Permissions") {
                 HStack {
@@ -824,166 +821,6 @@ private struct ActiveSpaceSettingsContent: View {
                         .font(.caption)
                     }
                 }
-            }
-        }
-    }
-}
-
-// MARK: - Virtual Display size walk-down experiment
-//
-// Built 2026-05-08 to find the smallest virtual-display size that still
-// registers as an extended display (so NSScreen.screens.count flips from
-// 1 to 2 and Dock's gesture path works). Picker writes VirtualDisplayWidth
-// / VirtualDisplayHeight defaults; "Apply" calls VirtualDisplay.recreate()
-// to take them live; the diagnostic block reads NSScreen and CGS state
-// so the result is visible in-place without a separate probe.
-//
-// Hidden behind a feature flag — normal users don't see this section.
-// To enable for further testing:
-//
-//     defaults write cc.jorviksoftware.ActiveSpace \
-//         ShowVirtualDisplayExperiment -bool YES
-//
-// Then quit + relaunch ActiveSpace.
-private struct VirtualDisplaySizeSection: View {
-
-    @AppStorage("ShowVirtualDisplayExperiment") private var showExperiment: Bool = false
-
-
-    private struct Preset: Identifiable {
-        let w: Int
-        let h: Int
-        var id: String { "\(w)x\(h)" }
-        var label: String { "\(w) × \(h)" }
-    }
-
-    private let presets: [Preset] = [
-        Preset(w: 640, h: 480),
-        Preset(w: 480, h: 360),
-        Preset(w: 400, h: 300),
-        Preset(w: 320, h: 240),
-        Preset(w: 256, h: 192),
-        Preset(w: 200, h: 150),
-        Preset(w: 160, h: 120),
-        Preset(w: 128, h: 96),
-        Preset(w: 96, h: 72),
-        Preset(w: 64, h: 48),
-        Preset(w: 32, h: 32),
-        Preset(w: 16, h: 16),
-    ]
-
-    @AppStorage("VirtualDisplayWidth") private var storedWidth: Int = 640
-    @AppStorage("VirtualDisplayHeight") private var storedHeight: Int = 480
-    @State private var diagnosticTick: Int = 0
-
-    var body: some View {
-        if showExperiment {
-            sectionBody
-        }
-    }
-
-    @ViewBuilder
-    private var sectionBody: some View {
-        Section("Virtual Display (experimental)") {
-            Picker("Size", selection: Binding<String>(
-                get: { "\(storedWidth)x\(storedHeight)" },
-                set: { tag in
-                    let parts = tag.split(separator: "x").compactMap { Int($0) }
-                    guard parts.count == 2 else { return }
-                    storedWidth = parts[0]
-                    storedHeight = parts[1]
-                }
-            )) {
-                ForEach(presets) { p in
-                    Text(p.label).tag(p.id)
-                }
-            }
-
-            HStack {
-                Button("Apply (recreate now)") {
-                    VirtualDisplay.recreate()
-                    // Refresh the diagnostic ~1.2s after the recreate kicks
-                    // off so WindowServer has settled before we read.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                        diagnosticTick &+= 1
-                    }
-                }
-                Spacer()
-                Button("Refresh diagnostic") { diagnosticTick &+= 1 }
-                    .font(.caption)
-            }
-
-            DiagnosticView(tick: diagnosticTick)
-
-            Text("The virtual just needs to register as a real extended display — that's what flips NSScreen.screens.count from 1 to 2 and lets ActiveSpace's gesture path work. Walk down from 640 × 480 until the diagnostic goes red (size too small for macOS to register as extended — pivots into mirror-source mode at the extreme low end), then step one back up. 16 × 16 is the floor; 1 × 1 is reachable only by editing defaults manually.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private struct DiagnosticView: View {
-        let tick: Int
-
-        var body: some View {
-            let virtualID = VirtualDisplayHelper.displayID()
-            let virtualW = Int(VirtualDisplayHelper.currentWidth())
-            let virtualH = Int(VirtualDisplayHelper.currentHeight())
-
-            let screenCount = NSScreen.screens.count
-            let virtualInScreens = NSScreen.screens.contains(where: {
-                let n = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
-                return n?.uint32Value == virtualID
-            })
-            let virtualBounds: CGRect = virtualID != 0 ? CGDisplayBounds(virtualID) : .zero
-            let mirrorsAnything: Bool = NSScreen.screens.contains(where: {
-                let n = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
-                guard let cg = n?.uint32Value else { return false }
-                return CGDisplayMirrorsDisplay(cg) != 0
-            })
-
-            let countOK = screenCount >= 2
-            let virtualOK = virtualID != 0 && virtualInScreens
-            let extendedOK = !mirrorsAnything && virtualBounds.width > 0 && virtualBounds.height > 0
-            let allOK = countOK && virtualOK && extendedOK
-
-            VStack(alignment: .leading, spacing: 4) {
-                row("NSScreen count", "\(screenCount)", countOK)
-                row("Virtual registered",
-                    virtualID == 0 ? "no" : "cgID \(virtualID)",
-                    virtualOK)
-                row("Virtual bounds",
-                    virtualID == 0
-                        ? "—"
-                        : "\(Int(virtualBounds.width)) × \(Int(virtualBounds.height))",
-                    extendedOK)
-                row("No mirroring",
-                    mirrorsAnything ? "✗ MIRRORED" : "ok",
-                    !mirrorsAnything)
-
-                if virtualW != 0 && virtualH != 0
-                   && (virtualW != Int(virtualBounds.width) || virtualH != Int(virtualBounds.height)) {
-                    Text("Note: requested \(virtualW) × \(virtualH), got \(Int(virtualBounds.width)) × \(Int(virtualBounds.height)) (macOS chose nearest supported mode)")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                }
-
-                Text(allOK
-                     ? "Virtual is a healthy extended display — this size works."
-                     : "Virtual not registered as extended — size too small or system in mirror state.")
-                    .font(.caption2)
-                    .foregroundStyle(allOK ? .green : .orange)
-            }
-            .id(tick)
-        }
-
-        @ViewBuilder
-        private func row(_ label: String, _ value: String, _ ok: Bool) -> some View {
-            HStack {
-                Text(label).font(.caption)
-                Spacer()
-                Text("\(value) \(ok ? "✓" : "✗")")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(ok ? .green : .red)
             }
         }
     }
