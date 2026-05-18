@@ -165,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // process wasn't started by launchd (user double-clicked the .app),
         // hand off so KeepAlive actually applies — launchd only monitors
         // processes it started itself.
-        registerKeepAliveAgentIfNeeded()
+        registerKeepAliveAgent()
         if shouldHandOffToLaunchd() {
             handOffToLaunchdAndExit()
             return
@@ -240,12 +240,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Keep-alive agent
 
-    private func registerKeepAliveAgentIfNeeded() {
-        guard agentService.status == .notRegistered else { return }
+    /// Idempotently register the keep-alive agent on every launch.
+    ///
+    /// We previously short-circuited on `agentService.status != .notRegistered`,
+    /// but `SMAppService.status` is known to cache stale values — it can report
+    /// `.enabled` even when the Background Task Management (BTM) database has
+    /// no child record for the agent, leaving the parent app row in BTM with
+    /// no child agent attached, and the agent never actually running.
+    /// Generation 47 with a missing child record was diagnosed in the field on
+    /// 2026-05-18 after a watchdog termination found nothing to respawn it.
+    ///
+    /// `SMAppService.register()` is documented as idempotent — calling it when
+    /// the agent really is registered is a no-op, calling it when BTM has lost
+    /// the record recreates the entry. Cheaper than trying to figure out which
+    /// state SMAppService thinks it's in.
+    private func registerKeepAliveAgent() {
+        let priorStatus = agentService.status
         do {
             try agentService.register()
-            aslog("Registered keep-alive agent (\(Self.agentPlistName))")
+            aslog("Registered keep-alive agent (\(Self.agentPlistName)) — priorStatus=\(priorStatus.rawValue) postStatus=\(agentService.status.rawValue)")
         } catch {
+            // Both paths so we get the error in the file log AND in Console.app,
+            // since the file log requires `ActiveSpace.debugLogging != NO` and
+            // Console is always available.
+            aslog("agent register failed (priorStatus=\(priorStatus.rawValue)): \(error)")
             NSLog("ActiveSpace: agent register failed: \(error)")
         }
     }

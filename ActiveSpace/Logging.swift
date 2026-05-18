@@ -1,16 +1,21 @@
 import Foundation
 
 /// Diagnostic logging is gated behind the `ActiveSpace.debugLogging` UserDefault.
-/// Release builds ship with the flag unset (default false) so nothing is written
-/// to disk. Users can enable it for support/debugging with:
+/// **Default is ON** — the log is small, the file is overwritten on every launch,
+/// and having logs already in place when a drift event happens means we don't
+/// have to ask the user to reproduce. Explicitly opt out with:
 ///
-///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.debugLogging -bool YES
+///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.debugLogging -bool NO
 ///
-/// Then relaunch ActiveSpace. Disable again with `-bool NO` (or `defaults delete`)
-/// plus another relaunch. The flag is read once at launch for speed; toggling at
+/// Then relaunch. The flag is read once at launch for speed; toggling at
 /// runtime has no effect until the next process start.
 private let debugLoggingEnabled: Bool = {
-    UserDefaults.standard.bool(forKey: "ActiveSpace.debugLogging")
+    // `object(forKey:)` distinguishes "unset" from "explicitly false". Unset
+    // → on; explicit YES/NO → honour the user's choice.
+    if let v = UserDefaults.standard.object(forKey: "ActiveSpace.debugLogging") as? Bool {
+        return v
+    }
+    return true
 }()
 
 private let logFile: FileHandle? = {
