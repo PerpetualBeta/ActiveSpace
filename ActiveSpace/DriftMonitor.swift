@@ -142,6 +142,23 @@ final class DriftMonitor {
 
         aslog("  verdict=RESTART(\(list))")
         aslog("Terminating for restart.")
+        // Signal `applicationWillTerminate` to override the default
+        // exit code from 0 to 2. The launchd keep-alive agent's
+        // KeepAlive rule is `SuccessfulExit=false`, which means
+        // "respawn only on non-zero exit" — so a clean
+        // `NSApp.terminate(nil)` (which exits 0) looks like an
+        // intentional user Quit and won't be respawned. Exit 2 keeps
+        // user Quit (exit 0, not respawned) distinguishable from
+        // watchdog-driven restart (exit 2, respawned).
+        WatchdogExit.requested = true
         NSApp.terminate(nil)
     }
+}
+
+/// Shared flag between `DriftMonitor` (which sets it before calling
+/// `NSApp.terminate`) and `AppDelegate.applicationWillTerminate`
+/// (which checks it and forces a non-zero `exit` if true). Lives at
+/// module scope so the two can communicate without owning each other.
+enum WatchdogExit {
+    static var requested = false
 }

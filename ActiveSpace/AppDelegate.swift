@@ -236,6 +236,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // launchd doesn't inherit a lingering 640×480 that would poison the
         // respawned instance's initial fingerprint.
         VirtualDisplay.teardown()
+
+        // Watchdog-initiated termination needs to exit non-zero so the
+        // launchd keep-alive agent (KeepAlive: SuccessfulExit=false)
+        // actually respawns us. User-initiated Quit leaves
+        // `WatchdogExit.requested` false and falls through to the
+        // default exit-0 path, which launchd correctly respects as an
+        // intentional shutdown.
+        if WatchdogExit.requested {
+            aslog("Watchdog-initiated terminate — exit(2) for launchd respawn")
+            exit(2)
+        }
     }
 
     // MARK: - Keep-alive agent
