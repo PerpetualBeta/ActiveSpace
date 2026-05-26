@@ -46,10 +46,10 @@ To avoid conflicts with macOS's built-in shortcuts, disable `Control-←` and `C
 
 Hybrid switching strategy chosen per display count:
 
-- **Single display:** direct CGS API (`CGSHideSpaces` / `CGSShowSpaces` / `CGSManagedDisplaySetCurrentSpace`) for an instant flash-free transition. Backed by an invisible 800×600 virtual display whose only job is to flip `NSScreen.screens.count` from 1 to 2 — that alone disarms a macOS 14+ single-display routing bug. The virtual is owned by a bundled `VirtualDisplayHost` helper process (launched on demand) and parked entirely in the negative-coordinate quadrant, fully unreachable by cursor or windows.
+- **Single display:** direct CGS API (`CGSHideSpaces` / `CGSShowSpaces` / `CGSManagedDisplaySetCurrentSpace`) for an instant flash-free transition. Backed by an invisible 800×600 virtual display whose only job is to flip `NSScreen.screens.count` from 1 to 2 — that alone disarms a macOS 14+ single-display routing bug. The virtual is owned by a bundled `VirtualDisplayHost` helper process (launched on demand) and parked in the negative-coordinate quadrant so it shares only a single corner with main.
 - **Multi-display (incl. spans-displays mode):** synthetic dock-swipe gestures via `CGEvent` because the direct API doesn't tell `WindowServer` to move windows or update Mission Control state.
 
-The virtual is created automatically when only a single physical display is present (laptop alone, or laptop with lid closed and one external) and torn down when a second physical display appears. A drift monitor classifies display/space reconfiguration events and, on qualifying drift, restarts the app via its launchd keep-alive agent so any accumulated WindowServer-state weirdness clears.
+The virtual is created automatically when only a single physical display is present (laptop alone, or laptop with lid closed and one external) and torn down when a second physical display appears. While the virtual exists ActiveSpace pins the cursor to main via a session-level CGEvent tap (`CursorFence`) — macOS otherwise lets the cursor traverse the single shared corner under some lid/wake/screen-lock race conditions, and the cursor would then be invisible on the off-screen virtual. A drift monitor classifies display/space reconfiguration events and, on qualifying drift, restarts the app via its launchd keep-alive agent so any accumulated WindowServer-state weirdness clears.
 
 ## Architecture
 
@@ -61,6 +61,7 @@ The virtual is created automatically when only a single physical display is pres
 | `SpaceSwitcher.swift` | Hybrid direct-API / synthetic-gesture switching |
 | `VirtualDisplay.swift` | Supervises the bundled `VirtualDisplayHost` helper; gates the post-reconfig menu-bar reset |
 | `VirtualDisplayHost/main.m` | Standalone helper process that owns the off-screen `CGVirtualDisplay` lifecycle |
+| `CursorFence.swift` | Session-level event tap that pins the cursor to main while the virtual exists |
 | `WindowFollow.swift` | Per-app "follow across spaces" toggle + toast HUD |
 | `MenuBarIcon.swift` | Numbered bubble rendering |
 | `SpaceSelectorView.swift` | SwiftUI popover (3+ spaces) |

@@ -23,6 +23,7 @@
 		AA000056 /* SpaceSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000036 /* SpaceSelectorView.swift */; };
 		AA000057 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000039 /* Assets.xcassets */; };
 		AA000060 /* JorvikAboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000070 /* JorvikAboutView.swift */; };
+		AA0000A0 /* CursorFence.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000A1 /* CursorFence.swift */; };
 		AA000061 /* JorvikSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000071 /* JorvikSettingsView.swift */; };
 		AA000063 /* JorvikMenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000073 /* JorvikMenuBuilder.swift */; };
 		AA000065 /* JorvikWindowHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000075 /* JorvikWindowHelper.swift */; };
@@ -90,6 +91,7 @@
 		AA000077 /* VirtualDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplay.swift; sourceTree = "<group>"; };
 		AA000082 /* Logging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging.swift; sourceTree = "<group>"; };
 		AA000083 /* TransitionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransitionOverlay.swift; sourceTree = "<group>"; };
+		AA0000A1 /* CursorFence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorFence.swift; sourceTree = "<group>"; };
 		AA000090 /* SwitcherController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherController.swift; sourceTree = "<group>"; };
 		AA000092 /* SwitcherAppResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherAppResolver.swift; sourceTree = "<group>"; };
 		AA000094 /* SwitcherHUDWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherHUDWindow.swift; sourceTree = "<group>"; };
@@ -151,6 +153,7 @@
 				AA000077 /* VirtualDisplay.swift */,
 				AA000082 /* Logging.swift */,
 				AA000083 /* TransitionOverlay.swift */,
+				AA0000A1 /* CursorFence.swift */,
 				AA000090 /* SwitcherController.swift */,
 				AA000092 /* SwitcherAppResolver.swift */,
 				AA000094 /* SwitcherHUDWindow.swift */,
@@ -296,6 +299,7 @@
 				AA000067 /* VirtualDisplay.swift in Sources */,
 				AA000069 /* Logging.swift in Sources */,
 				AA00006A /* TransitionOverlay.swift in Sources */,
+				AA0000A0 /* CursorFence.swift in Sources */,
 				AA000091 /* SwitcherController.swift in Sources */,
 				AA000093 /* SwitcherAppResolver.swift in Sources */,
 				AA000095 /* SwitcherHUDWindow.swift in Sources */,

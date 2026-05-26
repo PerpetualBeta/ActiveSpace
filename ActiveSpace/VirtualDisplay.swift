@@ -18,12 +18,19 @@ import Darwin
 /// `kCGErrorIllegalArgument` and the resulting virtual never registered
 /// in `NSScreen.screens`. The helper uses unique vendor `0x4A56` ("JV")
 /// which the saved-state index has never seen, so each launch is a
-/// clean first-time registration. As a side benefit, parking the
-/// virtual at `(-32768,-32768)` — clamped by macOS to `(-width,-height)`
-/// — makes the virtual fully unreachable by cursor or windows, which
-/// eliminates the entire stack of in-process mitigations (cursor fence,
-/// off-virtual sweep, AX window rescue, MouseCatcher, parkVirtual for
-/// screen lock).
+/// clean first-time registration.
+///
+/// **Position + cursor fence.** Parking the virtual at `(-32768,-32768)`
+/// is clamped by macOS to `(-width,-height)`, placing the virtual's
+/// bottom-right corner at main's top-left at `(0,0)` — the displays
+/// share exactly one point. Field evidence (cursor loss reported
+/// 2026-05-26) showed macOS allows diagonal cursor traversal across
+/// that shared corner under some race conditions (lid/wake/screen-lock
+/// the usual triggers). `CursorFence` (engaged here, disengaged in
+/// `stopHelper`) clamps the cursor to main's bounds via a session-level
+/// event tap whenever the helper is alive — restoring the "cursor
+/// cannot reach the virtual" invariant the parking strategy alone
+/// was supposed to provide.
 ///
 /// **Lifecycle.** `applicationDidFinishLaunching` calls `startManaging`,
 /// which installs the screen-params observer and runs the initial
@@ -152,6 +159,10 @@ enum VirtualDisplay {
             helperProcess = process
             lastSuccessfulLaunch = Date()
             aslog("launchHelper: started PID \(process.processIdentifier)")
+            // Engage cursor fence before the virtual registers. Idempotent;
+            // stays engaged across helper crash/restart cycles until
+            // stopHelper() runs.
+            CursorFence.engage()
             // The helper's CGCompleteDisplayConfiguration will fire a
             // CG reconfig event in this process. Request a gated
             // menu-bar reset that the gate will flush after the quiet
@@ -172,6 +183,9 @@ enum VirtualDisplay {
             kill(process.processIdentifier, SIGTERM)
             aslog("stopHelper: sent SIGTERM to PID \(process.processIdentifier)")
         }
+        // Virtual is going away — release the cursor so it can
+        // traverse to any newly-attached physical display.
+        CursorFence.disengage()
         // Helper's exit fires a CG reconfig event too — request a
         // post-destroy menu-bar reset.
         MenuBarResetGate.request()
