@@ -93,7 +93,7 @@ final class ReconfigurationObserver {
         aslog("Started. Initial fingerprint: \(lastFingerprint)")
     }
 
-    /// Current fingerprint used as the diff baseline. Exposed so RestartCoordinator
+    /// Current fingerprint used as the diff baseline. Exposed so DriftMonitor
     /// can evaluate absolute triggers (e.g. dock-on-virtual) without waiting for
     /// the first notification-driven event.
     var currentFingerprint: ActiveSpaceFingerprint { lastFingerprint }

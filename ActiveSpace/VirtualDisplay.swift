@@ -78,21 +78,6 @@ enum VirtualDisplay {
         stopHelper()
     }
 
-    /// Kill+relaunch the helper. Used by the size-walk-down experiment
-    /// in Settings ("Apply" after picking a new VirtualDisplayWidth /
-    /// VirtualDisplayHeight). The helper currently hardcodes 800×600,
-    /// so this is effectively a no-op for size changes — it still
-    /// bounces the virtual, which is useful for ad-hoc testing.
-    static func recreate() {
-        aslog("VirtualDisplay.recreate")
-        stopHelper()
-        // Brief delay so WindowServer fully tears down before we
-        // register the new instance.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            reconcile()
-        }
-    }
-
     // MARK: - Reconcile
 
     private static func reconcile() {

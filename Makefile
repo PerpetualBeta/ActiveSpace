@@ -1,9 +1,8 @@
 # ActiveSpace — current Space indicator with focus restore.
 #
 # Release pipeline delegated to the shared `release.mk` from
-# PerpetualBeta/jorvik-release. Xcode project (with embedded
-# MouseCatcher helper handled internally by the scheme), embedded
-# Sparkle, dual-ship (.zip + .pkg).
+# PerpetualBeta/jorvik-release. Xcode project with bundled
+# VirtualDisplayHost helper, embedded Sparkle, dual-ship (.zip + .pkg).
 
 BUNDLE_NAME      := ActiveSpace
 BUNDLE_TYPE      := app

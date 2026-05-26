@@ -75,13 +75,6 @@ private func hotkeyTapCallback(
         }
         return Unmanaged.passUnretained(event)
 
-    case .keyUp:
-        if _switcherEnabled,
-           SwitcherController.shared.handleKeyUp(keyCode: keyCode, flags: fullFlags) {
-            return nil
-        }
-        return Unmanaged.passUnretained(event)
-
     case .flagsChanged:
         if _switcherEnabled,
            SwitcherController.shared.handleFlagsChanged(flags: fullFlags) {
@@ -316,7 +309,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
-            (1 << CGEventType.keyUp.rawValue) |
             (1 << CGEventType.flagsChanged.rawValue)
         // Tap location & position chosen to play nicely with keystroke
         // rewriters like HyperKey, Karabiner-Elements, and similar tools

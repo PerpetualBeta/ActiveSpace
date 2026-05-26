@@ -1,22 +1,16 @@
 import Foundation
 
 /// Diagnostic logging is gated behind the `ActiveSpace.debugLogging` UserDefault.
-/// **Default is ON** — the log is small, the file is overwritten on every launch,
-/// and having logs already in place when a drift event happens means we don't
-/// have to ask the user to reproduce. Explicitly opt out with:
+/// **Default is OFF** — the drift / virtual-display path has been stable since
+/// 2026-05-21 and the running log is no longer earning its keep. Explicitly
+/// opt in with:
 ///
-///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.debugLogging -bool NO
+///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.debugLogging -bool YES
 ///
 /// Then relaunch. The flag is read once at launch for speed; toggling at
 /// runtime has no effect until the next process start.
-private let debugLoggingEnabled: Bool = {
-    // `object(forKey:)` distinguishes "unset" from "explicitly false". Unset
-    // → on; explicit YES/NO → honour the user's choice.
-    if let v = UserDefaults.standard.object(forKey: "ActiveSpace.debugLogging") as? Bool {
-        return v
-    }
-    return true
-}()
+private let debugLoggingEnabled: Bool =
+    UserDefaults.standard.bool(forKey: "ActiveSpace.debugLogging")
 
 private let logFile: FileHandle? = {
     guard debugLoggingEnabled else { return nil }
@@ -38,10 +32,4 @@ func aslog(_ msg: String) {
     if let data = line.data(using: .utf8) {
         logFile.write(data)
     }
-}
-
-/// C-callable bridge so VirtualDisplayHelper.m can write to the same file.
-@_cdecl("ActiveSpaceLogC")
-public func ActiveSpaceLogC(_ cstr: UnsafePointer<CChar>) {
-    aslog(String(cString: cstr))
 }

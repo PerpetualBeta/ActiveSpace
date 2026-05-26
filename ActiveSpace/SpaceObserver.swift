@@ -155,9 +155,4 @@ final class SpaceObserver: ObservableObject {
         guard index >= 1, index <= orderedSpaces.count else { return nil }
         return orderedSpaces[index - 1]
     }
-
-    /// Returns the ManagedSpaceID for a 1-based space index, or nil if out of range.
-    func managedSpaceID(forIndex index: Int) -> Int? {
-        spaceInfo(forIndex: index)?.managedSpaceID
-    }
 }

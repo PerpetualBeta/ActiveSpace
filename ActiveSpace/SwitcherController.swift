@@ -70,11 +70,6 @@ final class SwitcherController {
         }
     }
 
-    func handleKeyUp(keyCode: UInt16, flags: CGEventFlags) -> Bool {
-        _ = keyCode; _ = flags
-        return false
-    }
-
     func handleFlagsChanged(flags: CGEventFlags) -> Bool {
         defer { lastCGFlags = flags }
         guard enabled, state == .active else { return false }

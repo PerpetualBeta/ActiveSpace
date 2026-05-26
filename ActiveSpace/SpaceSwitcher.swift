@@ -101,11 +101,6 @@ enum SpaceSwitcher {
         }
     }
 
-    /// Toggle between space 1 and 2 (legacy convenience).
-    static func toggle(observer: SpaceObserver) {
-        switchNext(observer: observer)
-    }
-
     /// Move one "row" up in the conceptual grid (current − rowWidth), with
     /// column-cycling wrap. No-op when grid mode is inactive
     /// (rowWidth < 2 or totalSpaces ≤ rowWidth).

@@ -61,12 +61,6 @@ final class SwitcherAppStack {
         buckets[spaceID, default: Bucket()].touch(bundleID)
     }
 
-    func forgetSpace(_ spaceID: UInt64) {
-        if buckets.removeValue(forKey: spaceID) != nil {
-            aslog("SwitcherAppStack: forgetSpace \(spaceID)")
-        }
-    }
-
     // MARK: - Observation
 
     private func handleActivation(_ note: Notification) {

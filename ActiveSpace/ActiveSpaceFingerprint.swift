@@ -11,7 +11,7 @@ struct DisplayInfo: Equatable {
 }
 
 /// A combined display + Spaces snapshot. Diffing two fingerprints yields the
-/// restart-trigger classification used by RestartCoordinator.
+/// restart-trigger classification used by DriftMonitor.
 struct ActiveSpaceFingerprint: Equatable, CustomStringConvertible {
 
     // Display layer
