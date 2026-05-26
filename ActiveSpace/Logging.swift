@@ -14,9 +14,16 @@ private let debugLoggingEnabled: Bool =
 
 private let logFile: FileHandle? = {
     guard debugLoggingEnabled else { return nil }
+    // O_APPEND so every write atomically seeks to EOF. Required because
+    // VirtualDisplayHost (our child process) inherits this file as its
+    // stderr via process.standardError and writes through a different
+    // FD; without O_APPEND on both sides the two processes' writes race
+    // and clobber each other during the helper's startup burst.
+    // O_TRUNC starts each app launch with an empty log.
     let path = "/tmp/activespace.log"
-    FileManager.default.createFile(atPath: path, contents: nil)
-    return FileHandle(forWritingAtPath: path)
+    let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0o644)
+    guard fd >= 0 else { return nil }
+    return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
 }()
 
 private let timestampFormatter: DateFormatter = {
@@ -28,7 +35,6 @@ private let timestampFormatter: DateFormatter = {
 func aslog(_ msg: String) {
     guard debugLoggingEnabled, let logFile else { return }
     let line = "\(timestampFormatter.string(from: Date()))  \(msg)\n"
-    logFile.seekToEndOfFile()
     if let data = line.data(using: .utf8) {
         logFile.write(data)
     }

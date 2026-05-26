@@ -142,10 +142,14 @@ enum VirtualDisplay {
         let process = Process()
         process.executableURL = helperURL
         // Combine helper stderr into our log so its diagnostics live in
-        // /tmp/activespace.log alongside ActiveSpace's. The helper's
-        // log() writes to stderr.
-        if let logHandle = FileHandle(forWritingAtPath: "/tmp/activespace.log") {
-            logHandle.seekToEndOfFile()
+        // /tmp/activespace.log alongside ActiveSpace's. Open O_APPEND so
+        // the helper's writes interleave atomically with the parent's
+        // aslog calls (which also open the file O_APPEND in Logging.swift)
+        // — without it, the two FDs race and clobber each other during
+        // the helper's startup burst.
+        let logFD = open("/tmp/activespace.log", O_WRONLY | O_CREAT | O_APPEND, 0o644)
+        if logFD >= 0 {
+            let logHandle = FileHandle(fileDescriptor: logFD, closeOnDealloc: true)
             process.standardOutput = logHandle
             process.standardError = logHandle
         }
