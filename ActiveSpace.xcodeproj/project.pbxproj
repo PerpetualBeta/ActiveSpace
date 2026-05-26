@@ -22,8 +22,6 @@
 		AA000055 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000035 /* MenuBarIcon.swift */; };
 		AA000056 /* SpaceSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000036 /* SpaceSelectorView.swift */; };
 		AA000057 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000039 /* Assets.xcassets */; };
-		AA000058 /* switch_helper in Resources */ = {isa = PBXBuildFile; fileRef = AA000040 /* switch_helper */; };
-		AA000059 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000041 /* AboutView.swift */; };
 		AA000060 /* JorvikAboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000070 /* JorvikAboutView.swift */; };
 		AA000061 /* JorvikSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000071 /* JorvikSettingsView.swift */; };
 		AA000063 /* JorvikMenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000073 /* JorvikMenuBuilder.swift */; };
@@ -83,8 +81,6 @@
 		AA000037 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA000038 /* ActiveSpace.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ActiveSpace.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA000039 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		AA000040 /* switch_helper */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = switch_helper; sourceTree = "<group>"; };
-		AA000041 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		AA000042 /* ActiveSpace.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ActiveSpace.entitlements; sourceTree = "<group>"; };
 		AA000070 /* JorvikAboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikAboutView.swift; sourceTree = "<group>"; };
 		AA000071 /* JorvikSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikSettingsView.swift; sourceTree = "<group>"; };
@@ -92,7 +88,6 @@
 		AA000075 /* JorvikWindowHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikWindowHelper.swift; sourceTree = "<group>"; };
 		AA000076 /* JorvikShortcutRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikShortcutRecorder.swift; sourceTree = "<group>"; };
 		AA000077 /* VirtualDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplay.swift; sourceTree = "<group>"; };
-		AA000081 /* ActiveSpace-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ActiveSpace-Bridging-Header.h"; sourceTree = "<group>"; };
 		AA000082 /* Logging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging.swift; sourceTree = "<group>"; };
 		AA000083 /* TransitionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransitionOverlay.swift; sourceTree = "<group>"; };
 		AA000090 /* SwitcherController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherController.swift; sourceTree = "<group>"; };
@@ -152,11 +147,8 @@
 				AA000036 /* SpaceSelectorView.swift */,
 				AA000037 /* Info.plist */,
 				AA000039 /* Assets.xcassets */,
-				AA000040 /* switch_helper */,
-				AA000041 /* AboutView.swift */,
 				AA000042 /* ActiveSpace.entitlements */,
 				AA000077 /* VirtualDisplay.swift */,
-				AA000081 /* ActiveSpace-Bridging-Header.h */,
 				AA000082 /* Logging.swift */,
 				AA000083 /* TransitionOverlay.swift */,
 				AA000090 /* SwitcherController.swift */,
@@ -251,7 +243,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA000057 /* Assets.xcassets in Resources */,
-				AA000058 /* switch_helper in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -296,7 +287,6 @@
 				AA000054 /* SpaceSwitcher.swift in Sources */,
 				AA000055 /* MenuBarIcon.swift in Sources */,
 				AA000056 /* SpaceSelectorView.swift in Sources */,
-				AA000059 /* AboutView.swift in Sources */,
 				AA000060 /* JorvikAboutView.swift in Sources */,
 				AA000061 /* JorvikSettingsView.swift in Sources */,
 				AA000063 /* JorvikMenuBuilder.swift in Sources */,
@@ -463,7 +453,6 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "ActiveSpace/ActiveSpace-Bridging-Header.h";
 				SWIFT_VERSION = 5.9;
 			};
 			name = Debug;
@@ -493,7 +482,6 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "ActiveSpace/ActiveSpace-Bridging-Header.h";
 				SWIFT_VERSION = 5.9;
 			};
 			name = Release;
