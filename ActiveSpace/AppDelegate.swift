@@ -265,7 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             aslog("Registered keep-alive agent (\(Self.agentPlistName)) — priorStatus=\(priorStatus.rawValue) postStatus=\(agentService.status.rawValue)")
         } catch {
             // Both paths so we get the error in the file log AND in Console.app,
-            // since the file log requires `ActiveSpace.debugLogging != NO` and
+            // since the file log requires `ActiveSpace.debugLogging = YES` and
             // Console is always available.
             aslog("agent register failed (priorStatus=\(priorStatus.rawValue)): \(error)")
             NSLog("ActiveSpace: agent register failed: \(error)")

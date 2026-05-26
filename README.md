@@ -10,6 +10,7 @@ A macOS menu-bar app that shows your current Mission Control space and switches 
 - **Optional grid layout.** Tell ActiveSpace your conceptual row width — say, 4 if you keep 8 spaces and think of them as 4×2 — and the popover reflows into rows of that width. Two extra hotkeys, **Space Up** and **Space Down**, navigate ±rowWidth with column-cycling wrap (so `Space Down` from the bottom row wraps to the top of the same column). With grid mode on, **Next Space** and **Previous Space** become row-aware too — Next from the last column of any row wraps to the first column of the same row instead of stepping into the next row. Set row width to 0 to keep the original linear strip.
 - **Instant transitions.** No animation, no sliding, no wait — across single-display, dual-display, lid-open, and lid-closed configurations.
 - **Optional space-aware Cmd-Tab Switcher** (off by default). When on, `Cmd-Tab` shows only apps with windows on the current space — including minimised windows and windows of hidden apps. Cycle with `Tab` or arrows, reverse with `Shift-Tab`, commit by releasing `Cmd` or pressing `Return`, cancel with `Esc`. When off, native `Cmd-Tab` is completely untouched.
+- **Follow app across spaces.** Bind a shortcut to make the frontmost app's windows appear on every Mission Control space — the same effect as the Dock's right-click *Options → Assign To → All Desktops*. Toggle the same shortcut again and the app returns to the space it was on when you first followed it.
 
 ## Installation
 
@@ -24,7 +25,7 @@ Launch ActiveSpace from `/Applications` and grant Accessibility and Input Monito
 
 Right-click the menu-bar bubble and choose **Settings…**:
 
-- **Keyboard shortcuts** — Next Space and Previous Space hotkeys (plus Space Up and Space Down when grid layout is enabled).
+- **Keyboard shortcuts** — Next Space, Previous Space, and Follow App Across Spaces hotkeys (plus Space Up and Space Down when grid layout is enabled).
 - **Switcher** — toggle the space-aware Cmd-Tab replacement.
 - **Grid** — optional row width for the popover layout and the Space Up / Space Down hotkeys.
 - **Permissions** — live status of Accessibility and Input Monitoring with grant buttons.
@@ -45,10 +46,10 @@ To avoid conflicts with macOS's built-in shortcuts, disable `Control-←` and `C
 
 Hybrid switching strategy chosen per display count:
 
-- **Single display:** direct CGS API (`CGSHideSpaces` / `CGSShowSpaces` / `CGSManagedDisplaySetCurrentSpace`) for an instant flash-free transition. Backed by an invisible 640×480 virtual display that forces macOS off its single-display "Main" identifier and onto UUID-based identifiers — required for clean Dock compositing on macOS 14+.
+- **Single display:** direct CGS API (`CGSHideSpaces` / `CGSShowSpaces` / `CGSManagedDisplaySetCurrentSpace`) for an instant flash-free transition. Backed by an invisible 800×600 virtual display whose only job is to flip `NSScreen.screens.count` from 1 to 2 — that alone disarms a macOS 14+ single-display routing bug. The virtual is owned by a bundled `VirtualDisplayHost` helper process (launched on demand) and parked entirely in the negative-coordinate quadrant, fully unreachable by cursor or windows.
 - **Multi-display (incl. spans-displays mode):** synthetic dock-swipe gestures via `CGEvent` because the direct API doesn't tell `WindowServer` to move windows or update Mission Control state.
 
-The virtual display is created automatically when you have a single physical display (laptop alone, or laptop with lid closed and one external) and torn down again when a second display appears. While present, ActiveSpace pins it to the right edge of main, fences the cursor out of it, and resets menu-bar coordinate state on every display reconfiguration so windows and menus stay where you expect them.
+The virtual is created automatically when only a single physical display is present (laptop alone, or laptop with lid closed and one external) and torn down when a second physical display appears. A drift monitor classifies display/space reconfiguration events and, on qualifying drift, restarts the app via its launchd keep-alive agent so any accumulated WindowServer-state weirdness clears.
 
 ## Architecture
 
@@ -58,35 +59,26 @@ The virtual display is created automatically when you have a single physical dis
 | `AppDelegate.swift` | Status item, event tap, click routing, popover, settings, keep-alive agent registration |
 | `SpaceObserver.swift` | `@Published` current/total space counts; CGS polling + notifications |
 | `SpaceSwitcher.swift` | Hybrid direct-API / synthetic-gesture switching |
-| `VirtualDisplay.swift` | Manages the virtual display, drift reposition, cursor fence, post-create + post-destroy menu-bar resets |
-| `VirtualDisplayHelper.{h,m}` | Obj-C bridge to the private `CGVirtualDisplay` classes |
+| `VirtualDisplay.swift` | Supervises the bundled `VirtualDisplayHost` helper; gates the post-reconfig menu-bar reset |
+| `VirtualDisplayHost/main.m` | Standalone helper process that owns the off-screen `CGVirtualDisplay` lifecycle |
+| `WindowFollow.swift` | Per-app "follow across spaces" toggle + toast HUD |
 | `MenuBarIcon.swift` | Numbered bubble rendering |
 | `SpaceSelectorView.swift` | SwiftUI popover (3+ spaces) |
 | `TransitionOverlay.swift` | Per-screen blur overlay that masks intermediate-space flashes during multi-step jumps |
 | `SwitcherController.swift` | State machine for the space-aware Cmd-Tab switcher |
 | `SwitcherHUDWindow.swift` | Borderless HUD with proportional icon scaling |
-| `SwitcherAppResolver.swift` | Per-window space membership via `SLSCopySpacesForWindows` |
+| `SwitcherAppResolver.swift` | Per-window space membership via `SLSCopySpacesForWindows`; pre-warmed app-icon cache |
 | `SwitcherAppStack.swift` | Per-space MRU bundle-ID stack |
-| `AppIconCache.swift` | Pre-warms scaled icons so the first HUD draw is snappy |
 | `ReconfigurationObserver.swift` | Six-source observer for display/space/screen-lock/poll events |
-| `DriftMonitor.swift` | Classifies reconfiguration events; logs drift verdicts |
+| `DriftMonitor.swift` | Classifies reconfiguration events; terminates on qualifying drift so launchd respawns |
+| `ActiveSpaceFingerprint.swift` | Display + Spaces snapshot used for drift diffing |
+| `SpacesPlist.swift` | Reads `com.apple.spaces.plist` for visual-order ground truth |
+| `Logging.swift` | `aslog(...)` to `/tmp/activespace.log`, gated on `ActiveSpace.debugLogging` |
 | `CGSPrivate.swift` | Swift bindings for private CoreGraphics, SkyLight, and Accessibility APIs |
 
 ## If your Dock disappears
 
-ActiveSpace uses an invisible virtual display on single-monitor configurations. Very rarely, a display reconfiguration can cause the Dock to migrate onto it. If that happens, right-click the bubble in the menu bar and choose **Quit** — your Dock will return immediately.
-
-## If your mouse pointer disappears
-
-The same invisible virtual display sits 6000pt off-screen to the right. ActiveSpace installs a cursor fence to keep the pointer out of that region, but a fast cursor throw during exactly the wrong moment (e.g. just after waking from screen lock, while the fence is briefly disarmed) can occasionally slip past — and once the cursor is on the off-screen virtual, it's invisible.
-
-ActiveSpace ships **MouseCatcher** for exactly this case — a tiny keyboard-only utility that warps the cursor back to the centre of your main display. ActiveSpace deploys it to `/Applications/MouseCatcher.app` automatically on launch (sibling of ActiveSpace.app) so it's already there when you need it. To recover the cursor:
-
-1. Press <kbd>⌘&nbsp;Space</kbd> to open Spotlight
-2. Type **MouseCatcher**
-3. Press <kbd>Return</kbd>
-
-The cursor reappears immediately near the centre of your main display. MouseCatcher does its one job and exits — no Dock flash, no menu-bar item, no UI.
+ActiveSpace uses an invisible virtual display on single-monitor configurations. Very rarely, a display reconfiguration can route the Dock onto it. ActiveSpace's drift monitor detects this within a couple of seconds and restarts the app via its launchd keep-alive agent, which clears the condition. If you'd rather not wait, right-click the bubble in the menu bar and choose **Quit** — your Dock returns immediately.
 
 ## Building
 
