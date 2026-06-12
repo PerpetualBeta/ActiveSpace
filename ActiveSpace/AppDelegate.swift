@@ -199,6 +199,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // Persist the item's menu-bar slot across launches (and let a user ⌘-drag stick).
+        statusItem.autosaveName = "ActiveSpaceStatusItem"
 
         guard let button = statusItem.button else { return }
         button.target = self
