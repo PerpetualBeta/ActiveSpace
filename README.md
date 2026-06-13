@@ -81,6 +81,12 @@ The virtual is created automatically when only a single physical display is pres
 
 ActiveSpace uses an invisible virtual display on single-monitor configurations. Very rarely, a display reconfiguration can route the Dock onto it. ActiveSpace's drift monitor detects this within a couple of seconds and restarts the app via its launchd keep-alive agent, which clears the condition. If you'd rather not wait, right-click the bubble in the menu bar and choose **Quit** — your Dock returns immediately.
 
+## First launch on a single-display Mac
+
+The first time ActiveSpace runs on a Mac with only one display, macOS may ask **"What do you want to show on 'ActiveSpace VirtualDisplayHost'?"** Choose **Extended Display** (not Mirror) and tick **Set as Default**, then confirm.
+
+This is a one-time macOS prompt for ActiveSpace's invisible helper display — the off-screen virtual that makes instant single-display switching work. Nothing is ever shown or mirrored on it; it stays parked off-screen. macOS remembers the choice, so you'll only be asked once. (It's a macOS-imposed prompt for any virtual display and can't be suppressed by the app, so ActiveSpace shows a short note explaining it if the picker appears.)
+
 ## Building
 
 ```bash
