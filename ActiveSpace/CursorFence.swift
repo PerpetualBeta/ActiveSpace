@@ -16,7 +16,8 @@ import CoreGraphics
 /// diagonal cursor traversal across that shared corner under some
 /// conditions (lid/wake/screen-lock race windows are the most common
 /// trigger), so the cursor occasionally slips off-main onto the
-/// invisible virtual and is unrecoverable without MouseCatcher.
+/// invisible virtual, where it's invisible and — without this fence —
+/// effectively unrecoverable.
 ///
 /// **Mechanism.** A `cgAnnotatedSessionEventTap` on `.mouseMoved` plus
 /// the three drag variants sees the cursor position before downstream

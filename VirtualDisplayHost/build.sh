@@ -1,8 +1,9 @@
 #!/bin/bash
-# VirtualDisplayHost build script. Mirrors MouseCatcher/build.sh's
-# universal-binary + Developer ID signing pattern — see comments there
-# for the rationale on per-arch compile + lipo (Apple-Silicon-only ship
-# vs. Intel users with non-functional helpers).
+# VirtualDisplayHost build script. Universal binary + Developer ID
+# signing. Per-arch compile + lipo so the helper runs on both
+# architectures — an Apple-Silicon-only ship would leave Intel users
+# with a non-functional helper (and ActiveSpace's single-display
+# mitigation silently dead).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
