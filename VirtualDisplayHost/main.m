@@ -159,28 +159,6 @@ int main(int argc, char *argv[]) {
         id modeObj = make_mode(w, h);
         if (!modeObj) { log_(@"mode creation failed"); return 1; }
 
-        id desc = [[CGVirtualDisplayDescriptor alloc] init];
-        [desc setValue:@"ActiveSpace VirtualDisplayHost" forKey:@"name"];
-        // 0x4A56 = "JV" (Jorvik). Unique to this helper — distinct from
-        // ActiveSpace's legacy 0xACE5 so the saved-displays plist treats
-        // each instance as a fresh device with no replayed history.
-        // 0x4A56 = "JV" (Jorvik). Vendor ID is stable for grep-ability;
-        // serial = PID so each helper instance is unique. Stable IDs
-        // (like the original 0x4A56/1/1) collide with WindowServer's
-        // saved registry when a prior helper crashed and left a virtual
-        // behind: CGVirtualDisplay init fails because the IDs are
-        // "taken" by the leaked entry. PID-as-serial sidesteps that
-        // entirely — collisions are impossible since PIDs don't repeat
-        // for the lifetime of a boot.
-        [desc setValue:@(0x4A56) forKey:@"vendorID"];
-        [desc setValue:@(0x0001) forKey:@"productID"];
-        [desc setValue:@((unsigned int)getpid()) forKey:@"serialNum"];
-        [desc setValue:@(w) forKey:@"maxPixelsWide"];
-        [desc setValue:@(h) forKey:@"maxPixelsHigh"];
-        [desc setValue:[NSValue valueWithSize:NSMakeSize(76.2, 57.1)] forKey:@"sizeInMillimeters"];
-        [desc setValue:dispatch_get_main_queue() forKey:@"queue"];
-
-        // Inline alloc + invoke-init dance. See make_display note above.
         Class CGVirtualDisplayCls = NSClassFromString(@"CGVirtualDisplay");
         if (!CGVirtualDisplayCls) {
             log_(@"CGVirtualDisplay class unavailable — aborting");
@@ -192,18 +170,70 @@ int main(int argc, char *argv[]) {
             log_(@"CGVirtualDisplay has no initWithDescriptor: — aborting");
             return 1;
         }
-        NSInvocation *initInv = [NSInvocation invocationWithMethodSignature:initSig];
-        initInv.selector = initSel;
-        [initInv setArgument:&desc atIndex:2];
-        id display = [CGVirtualDisplayCls alloc];
-        [initInv invokeWithTarget:display];
-        __unsafe_unretained id initResult;
-        [initInv getReturnValue:&initResult];
-        if (!initResult) {
-            log_(@"CGVirtualDisplay init failed");
+
+        // Serial identity — prefer STABLE, fall back to PID only on collision.
+        //
+        // A stable vendor+product+serial triple is what lets macOS recognise
+        // the virtual across launches and remember it as an *extended* display.
+        // Without it (the PID-as-serial era), every launch presented as an
+        // unknown display, so macOS popped the "What do you want to show on
+        // 'ActiveSpace VirtualDisplayHost'?" mirror chooser — and while that
+        // chooser is up the virtual never comes online, NSScreen.count never
+        // flips to 2, and the single-display mitigation silently fails.
+        //
+        // The one hazard of a stable serial is a registry collision: if a
+        // prior helper crashed and leaked its virtual into WindowServer's
+        // saved registry, re-using the same IDs makes initWithDescriptor:
+        // return nil because they're "taken". We detect exactly that and fall
+        // back to a PID serial, which can't collide (PIDs don't repeat within
+        // a boot). So the normal path is the quiet, recognised stable display;
+        // the PID path is the rare post-crash safety net.
+        static const unsigned int kStableSerial = 0x0001;
+        unsigned int serialCandidates[] = { kStableSerial, (unsigned int)getpid() };
+        const size_t serialCount = sizeof(serialCandidates) / sizeof(serialCandidates[0]);
+
+        for (size_t i = 0; i < serialCount; i++) {
+            unsigned int serial = serialCandidates[i];
+
+            id desc = [[CGVirtualDisplayDescriptor alloc] init];
+            [desc setValue:@"ActiveSpace VirtualDisplayHost" forKey:@"name"];
+            // 0x4A56 = "JV" (Jorvik). Distinct from ActiveSpace's legacy
+            // 0xACE5 so the saved-displays plist carries no replayed
+            // mirror-master history for this vendor.
+            [desc setValue:@(0x4A56) forKey:@"vendorID"];
+            [desc setValue:@(0x0001) forKey:@"productID"];
+            [desc setValue:@(serial) forKey:@"serialNum"];
+            [desc setValue:@(w) forKey:@"maxPixelsWide"];
+            [desc setValue:@(h) forKey:@"maxPixelsHigh"];
+            [desc setValue:[NSValue valueWithSize:NSMakeSize(76.2, 57.1)] forKey:@"sizeInMillimeters"];
+            [desc setValue:dispatch_get_main_queue() forKey:@"queue"];
+
+            // Inline alloc + invoke-init dance. See make_display note above —
+            // must stay inline (not factored into a function) so the alloc
+            // result is bound to the strong static g_display before the local
+            // can fall out of scope and trip ARC's scope-exit release.
+            NSInvocation *initInv = [NSInvocation invocationWithMethodSignature:initSig];
+            initInv.selector = initSel;
+            [initInv setArgument:&desc atIndex:2];
+            id display = [CGVirtualDisplayCls alloc];
+            [initInv invokeWithTarget:display];
+            __unsafe_unretained id initResult;
+            [initInv getReturnValue:&initResult];
+            if (!initResult) {
+                BOOL more = (i + 1 < serialCount);
+                log_(@"CGVirtualDisplay init failed with serial=0x%x%@", serial,
+                     more ? @" — collision? retrying with PID serial" : @"");
+                continue;
+            }
+            g_display = display;   // Strong assignment binds the alloc result.
+            log_(@"CGVirtualDisplay created with serial=0x%x", serial);
+            break;
+        }
+
+        if (!g_display) {
+            log_(@"CGVirtualDisplay init failed for every serial candidate — aborting");
             return 1;
         }
-        g_display = display;   // Strong assignment binds the alloc result.
 
         NSNumber *displayIDNum = [g_display valueForKey:@"displayID"];
         CGDirectDisplayID cgID = (CGDirectDisplayID)displayIDNum.unsignedIntValue;

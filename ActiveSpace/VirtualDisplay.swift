@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import CoreGraphics
 import Darwin
 
 /// Launches and supervises the bundled VirtualDisplayHost helper, which
@@ -173,6 +174,15 @@ enum VirtualDisplay {
             // period — same machinery that handled the old in-process
             // create path.
             MenuBarResetGate.request()
+            // First-run onboarding: if the virtual doesn't actually come
+            // online shortly after launch, macOS is showing its one-time
+            // "what do you want to show on this display?" picker for the
+            // (unrecognised) virtual — and until the user picks Extended
+            // Display, NSScreen.count never flips and the mitigation can't
+            // work. We can't suppress that macOS picker (it fires for any
+            // fresh CGVirtualDisplay identity and isn't settable away), so
+            // we explain it once. See KB conventions/virtual-display-picker.
+            scheduleVirtualActivationCheck()
         } catch {
             aslog("launchHelper: run() failed — \(error)")
             scheduleRelaunch()
@@ -249,6 +259,71 @@ enum VirtualDisplay {
             return nil
         }
         return helperBinary
+    }
+
+    // MARK: - First-run onboarding for the macOS display picker
+
+    // Set once the virtual has successfully come online on this machine —
+    // after that, WindowServer remembers the Extended arrangement for our
+    // (stable) identity and never prompts again, so we never nag again.
+    private static let setupConfirmedKey = "VirtualDisplaySetupConfirmed"
+    // Throttle the hint to at most once per app launch while setup is pending.
+    private static var hintShownThisLaunch = false
+
+    /// A few seconds after launching the helper, check whether the virtual
+    /// actually registered. If it did, record that setup is done. If it
+    /// didn't, the macOS picker is pending/declined — nudge the user once
+    /// per launch (until they complete the one-time Extended-Display choice).
+    private static func scheduleVirtualActivationCheck() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            // Only meaningful while we still expect the helper's virtual.
+            guard helperProcess?.isRunning ?? false else { return }
+            if virtualIsActive() {
+                UserDefaults.standard.set(true, forKey: setupConfirmedKey)
+                return
+            }
+            guard !UserDefaults.standard.bool(forKey: setupConfirmedKey),
+                  !hintShownThisLaunch else { return }
+            hintShownThisLaunch = true
+            showExtendedDisplayHint()
+        }
+    }
+
+    /// True when our helper's virtual (matched by vendor ID) is present and
+    /// active in the active display list — i.e. the user has chosen Extended
+    /// Display and the count has flipped.
+    private static func virtualIsActive() -> Bool {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return false }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return false }
+        return ids.prefix(Int(count)).contains {
+            CGDisplayVendorNumber($0) == helperVendorID && CGDisplayIsActive($0) != 0
+        }
+    }
+
+    /// One-time, friendly explanation of the macOS picker. Shown only when
+    /// the virtual failed to activate and setup hasn't been confirmed.
+    private static func showExtendedDisplayHint() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "One-time setup for single-display space switching"
+        alert.informativeText = """
+            macOS is asking what to show on “ActiveSpace VirtualDisplayHost”. \
+            Choose Extended Display (not Mirror), tick “Set as Default”, and confirm.
+
+            ActiveSpace adds a tiny off-screen helper display to work around a \
+            macOS single-monitor limitation that otherwise breaks instant space \
+            switching. Nothing is ever shown or mirrored on it — it stays \
+            off-screen, and you’ll only be asked once.
+            """
+        alert.addButton(withTitle: "Open Display Settings")
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn,
+           let url = URL(string: "x-apple.systempreferences:com.apple.Displays-Settings.extension") {
+            NSWorkspace.shared.open(url)
+        }
     }
 }
 
