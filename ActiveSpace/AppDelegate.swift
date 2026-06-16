@@ -228,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         // Tear down the virtual display before exit so a self-restart under
-        // launchd doesn't inherit a lingering 640×480 that would poison the
+        // launchd doesn't inherit a lingering 800×600 that would poison the
         // respawned instance's initial fingerprint.
         VirtualDisplay.teardown()
 

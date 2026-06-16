@@ -29,11 +29,11 @@ struct ActiveSpaceFingerprint: Equatable, CustomStringConvertible {
     //
     // Evaluated against the current state alone, no diff needed. `dock-on-virtual`
     // manifests almost entirely at startup (macOS transiently routes main/Dock
-    // to ActiveSpace's 640×480 virtual), so must fire from t=0 without a grace
+    // to ActiveSpace's 800×600 virtual), so must fire from t=0 without a grace
     // window.
 
     /// Main display's size is ≤ 1024 × 768 — heuristic for "main has been
-    /// re-elected onto the 640×480 virtual display". No real monitor is that
+    /// re-elected onto the 800×600 virtual display". No real monitor is that
     /// small, so a small main is almost certainly the virtual one.
     var mainIsSmall: Bool { mainBounds.width <= 1024 && mainBounds.height <= 768 }
 
