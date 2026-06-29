@@ -6,7 +6,7 @@ A macOS menu-bar app that shows your current Mission Control space and switches 
 
 - **Numbered bubble in the menu bar** showing the current space; updates live whether you switch by ActiveSpace, Mission Control, or trackpad gesture.
 - **Click to switch.** With two spaces a left-click toggles between them; with three or more it opens a popover with numbered buttons; with one space the icon is just an indicator.
-- **Configurable keyboard shortcuts** for next/previous space, with wrap-around.
+- **Configurable keyboard shortcuts** for next/previous space. They wrap around at the ends by default; a **Navigation** setting switches to a hard stop, where Previous on the first space and Next on the last space are no-ops.
 - **Optional grid layout.** Tell ActiveSpace your conceptual row width — say, 4 if you keep 8 spaces and think of them as 4×2 — and the popover reflows into rows of that width. Two extra hotkeys, **Space Up** and **Space Down**, navigate ±rowWidth with column-cycling wrap (so `Space Down` from the bottom row wraps to the top of the same column). With grid mode on, **Next Space** and **Previous Space** become row-aware too — Next from the last column of any row wraps to the first column of the same row instead of stepping into the next row. Set row width to 0 to keep the original linear strip.
 - **Instant transitions.** No animation, no sliding, no wait — across single-display, dual-display, lid-open, and lid-closed configurations.
 - **Optional space-aware Cmd-Tab Switcher** (off by default). When on, `Cmd-Tab` shows only apps with windows on the current space — including minimised windows and windows of hidden apps. Cycle with `Tab` or arrows, reverse with `Shift-Tab`, commit by releasing `Cmd` or pressing `Return`, cancel with `Esc`. When off, native `Cmd-Tab` is completely untouched.
@@ -28,6 +28,7 @@ Right-click the menu-bar bubble and choose **Settings…**:
 - **Keyboard shortcuts** — Next Space, Previous Space, and Follow App Across Spaces hotkeys (plus Space Up and Space Down when grid layout is enabled).
 - **Switcher** — toggle the space-aware Cmd-Tab replacement.
 - **Grid** — optional row width for the popover layout and the Space Up / Space Down hotkeys.
+- **Navigation** — **Wrap around at the ends** (on by default). Turn it off for a hard stop: Previous on the first space and Next on the last space become no-ops. In grid mode the same applies at the row and column edges.
 - **Permissions** — live status of Accessibility and Input Monitoring with grant buttons.
 - **Launch at Login** — start automatically.
 
