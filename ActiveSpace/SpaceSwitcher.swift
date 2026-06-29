@@ -58,19 +58,19 @@ enum SpaceSwitcher {
     /// - Grid mode: wraps within the current row. Next from the last column of
     ///   row N goes to the first column of row N, never crossing into row N+1.
     ///   Symmetric with `switchUp`/`switchDown` (which cycle within columns).
-    static func switchNext(rowWidth: Int = 0, observer: SpaceObserver) {
-        horizontalStep(direction: 1, rowWidth: rowWidth, observer: observer)
+    static func switchNext(rowWidth: Int = 0, wrap: Bool = true, observer: SpaceObserver) {
+        horizontalStep(direction: 1, rowWidth: rowWidth, wrap: wrap, observer: observer)
     }
 
     /// Move to the previous space; same wrap semantics as `switchNext`.
-    static func switchPrev(rowWidth: Int = 0, observer: SpaceObserver) {
-        horizontalStep(direction: -1, rowWidth: rowWidth, observer: observer)
+    static func switchPrev(rowWidth: Int = 0, wrap: Bool = true, observer: SpaceObserver) {
+        horizontalStep(direction: -1, rowWidth: rowWidth, wrap: wrap, observer: observer)
     }
 
     /// Linear or row-cycling step. Partial last rows are handled — e.g. with
     /// total=6, rowWidth=4 the second row contains only spaces 5 and 6, so
     /// Next from 6 wraps to 5 and Prev from 5 wraps to 6.
-    private static func horizontalStep(direction: Int, rowWidth: Int, observer: SpaceObserver) {
+    private static func horizontalStep(direction: Int, rowWidth: Int, wrap: Bool, observer: SpaceObserver) {
         observer.refresh()
         let total = observer.totalSpaces
         guard total > 1 else { return }
@@ -78,24 +78,29 @@ enum SpaceSwitcher {
 
         let target: Int
         if rowWidth >= 2 && total > rowWidth {
-            // Grid mode: wrap within current row.
+            // Grid mode: move within the current row.
             let row = (current - 1) / rowWidth
             let rowStart = row * rowWidth + 1
             let rowEnd = min(rowStart + rowWidth - 1, total)
             let rowSize = rowEnd - rowStart + 1
             let column = current - rowStart           // 0-based within row
-            let newColumn = ((column + direction) % rowSize + rowSize) % rowSize
-            target = rowStart + newColumn
-        } else {
-            // Linear mode: wrap across the whole list.
-            if direction > 0 {
-                target = current < total ? current + 1 : 1
+            let nextColumn = column + direction
+            if nextColumn < 0 || nextColumn >= rowSize {
+                // Past the row edge: wrap within the row, or hard-stop (no-op).
+                target = wrap ? rowStart + ((nextColumn % rowSize + rowSize) % rowSize) : current
             } else {
-                target = current > 1 ? current - 1 : total
+                target = rowStart + nextColumn
+            }
+        } else {
+            // Linear mode: move across the whole list.
+            if direction > 0 {
+                target = current < total ? current + 1 : (wrap ? 1 : current)
+            } else {
+                target = current > 1 ? current - 1 : (wrap ? total : current)
             }
         }
 
-        aslog("horizontalStep(\(direction)): current=\(current) total=\(total) rowWidth=\(rowWidth) → target=\(target)")
+        aslog("horizontalStep(\(direction)): current=\(current) total=\(total) rowWidth=\(rowWidth) wrap=\(wrap) → target=\(target)")
         if target != current {
             switchTo(index: target, observer: observer)
         }
@@ -104,21 +109,21 @@ enum SpaceSwitcher {
     /// Move one "row" up in the conceptual grid (current − rowWidth), with
     /// column-cycling wrap. No-op when grid mode is inactive
     /// (rowWidth < 2 or totalSpaces ≤ rowWidth).
-    static func switchUp(rowWidth: Int, observer: SpaceObserver) {
-        step(direction: -1, rowWidth: rowWidth, observer: observer)
+    static func switchUp(rowWidth: Int, wrap: Bool = true, observer: SpaceObserver) {
+        step(direction: -1, rowWidth: rowWidth, wrap: wrap, observer: observer)
     }
 
     /// Move one row down (current + rowWidth), with column-cycling wrap.
     /// No-op when grid mode is inactive.
-    static func switchDown(rowWidth: Int, observer: SpaceObserver) {
-        step(direction: 1, rowWidth: rowWidth, observer: observer)
+    static func switchDown(rowWidth: Int, wrap: Bool = true, observer: SpaceObserver) {
+        step(direction: 1, rowWidth: rowWidth, wrap: wrap, observer: observer)
     }
 
     /// Column-cycling navigation. The user thinks of spaces as a grid of
     /// `rowWidth` columns; this moves through column N independently of
     /// other columns. With a partial last row, columns past the partial-row
     /// edge have only one row each, so up/down on those columns no-ops.
-    private static func step(direction: Int, rowWidth: Int, observer: SpaceObserver) {
+    private static func step(direction: Int, rowWidth: Int, wrap: Bool, observer: SpaceObserver) {
         observer.refresh()
         let total = observer.totalSpaces
         guard rowWidth >= 2, total > rowWidth else {
@@ -129,9 +134,20 @@ enum SpaceSwitcher {
         let column  = (current - 1) % rowWidth
         let row     = (current - 1) / rowWidth
         let rowsInColumn = (total - column - 1) / rowWidth + 1
-        let newRow = ((row + direction) % rowsInColumn + rowsInColumn) % rowsInColumn
-        let target = column + newRow * rowWidth + 1
-        aslog("step(\(direction)): current=\(current) col=\(column) row=\(row) rowsInCol=\(rowsInColumn) → target=\(target)")
+        let nextRow = row + direction
+        let target: Int
+        if nextRow < 0 || nextRow >= rowsInColumn {
+            // Past the column edge: wrap within the column, or hard-stop (no-op).
+            guard wrap else {
+                aslog("step(\(direction)): hard stop at column end (current=\(current)) — ignoring")
+                return
+            }
+            let newRow = (nextRow % rowsInColumn + rowsInColumn) % rowsInColumn
+            target = column + newRow * rowWidth + 1
+        } else {
+            target = column + nextRow * rowWidth + 1
+        }
+        aslog("step(\(direction)): current=\(current) col=\(column) row=\(row) rowsInCol=\(rowsInColumn) wrap=\(wrap) → target=\(target)")
         if target != current {
             switchTo(index: target, observer: observer)
         }

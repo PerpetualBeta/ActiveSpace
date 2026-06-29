@@ -133,6 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Drives the popover layout and gates the Space Up / Space Down hotkeys.
     var rowWidth: Int = 0 { didSet { _rowWidth = rowWidth } }
 
+    /// When true (default), Next/Previous (and grid Up/Down) wrap around at the
+    /// ends — Next from the last space lands on the first, Previous from the
+    /// first lands on the last. When false, the ends are a hard stop: the move
+    /// is a no-op there.
+    var wrapAround: Bool = true
+
     var switcherEnabled: Bool = false {
         didSet {
             _switcherEnabled = switcherEnabled
@@ -374,10 +380,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let action = _hotkeyAction else { return }
         _hotkeyAction = nil
         switch action {
-        case .next: SpaceSwitcher.switchNext(rowWidth: rowWidth, observer: observer)
-        case .prev: SpaceSwitcher.switchPrev(rowWidth: rowWidth, observer: observer)
-        case .up:   SpaceSwitcher.switchUp(rowWidth: rowWidth, observer: observer)
-        case .down: SpaceSwitcher.switchDown(rowWidth: rowWidth, observer: observer)
+        case .next: SpaceSwitcher.switchNext(rowWidth: rowWidth, wrap: wrapAround, observer: observer)
+        case .prev: SpaceSwitcher.switchPrev(rowWidth: rowWidth, wrap: wrapAround, observer: observer)
+        case .up:   SpaceSwitcher.switchUp(rowWidth: rowWidth, wrap: wrapAround, observer: observer)
+        case .down: SpaceSwitcher.switchDown(rowWidth: rowWidth, wrap: wrapAround, observer: observer)
         case .followToggle: WindowFollow.toggle()
         }
     }
@@ -418,6 +424,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         rowWidth = d.integer(forKey: "rowWidth")           // 0 if absent
         switcherEnabled = d.bool(forKey: "switcherEnabled")
+        // Absent key defaults to true (wrap), preserving the original behaviour.
+        wrapAround = d.object(forKey: "wrapAround") as? Bool ?? true
     }
 
     func saveShortcuts() {
@@ -479,6 +487,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func saveSwitcherEnabled() {
         UserDefaults.standard.set(switcherEnabled, forKey: "switcherEnabled")
+    }
+
+    func saveWrapAround() {
+        UserDefaults.standard.set(wrapAround, forKey: "wrapAround")
     }
 
     func nextShortcutDisplayString() -> String {
@@ -727,6 +739,16 @@ private struct ActiveSpaceSettingsContent: View {
                     delegate.saveRowWidth()
                 }
                 Text("Lay out the popover as a grid of this width and enable Space Up / Space Down keyboard shortcuts. Set to 0 for the original linear strip.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Navigation") {
+                Toggle("Wrap around at the ends", isOn: Binding(
+                    get: { delegate.wrapAround },
+                    set: { delegate.wrapAround = $0; delegate.saveWrapAround() }
+                ))
+                Text("On: Next from the last space jumps to the first, and Previous from the first jumps to the last. Off: stop at the ends — Previous on the first space and Next on the last space do nothing.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
