@@ -124,10 +124,19 @@ private final class SwitcherContentView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
 
-        ring.backgroundColor = NSColor.white.withAlphaComponent(0.35).cgColor
-        ring.borderColor = NSColor.white.withAlphaComponent(0.85).cgColor
-        ring.borderWidth = 2
+        // Selected-app highlight. A filled accent "chip" reads clearly on both
+        // the light and dark HUD material; the old translucent-white ring washed
+        // out on a light HUD / glare / pale wallpaper, so you couldn't tell which
+        // app was selected. The white hairline and soft shadow keep the chip crisp
+        // against a busy background regardless of accent colour.
+        ring.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.85).cgColor
+        ring.borderColor = NSColor.white.withAlphaComponent(0.9).cgColor
+        ring.borderWidth = 3
         ring.cornerRadius = 18
+        ring.shadowColor = NSColor.black.cgColor
+        ring.shadowOpacity = 0.35
+        ring.shadowRadius = 6
+        ring.shadowOffset = CGSize(width: 0, height: -1)
         ring.isHidden = true
         layer?.addSublayer(ring)
 
@@ -166,6 +175,7 @@ private final class SwitcherContentView: NSView {
 
         cachedFittingSize = computeFittingSize()
         ring.cornerRadius = 18 * scale
+        ring.borderWidth = max(2, 3 * scale)
         invalidateIntrinsicContentSize()
         needsLayout = true
     }
