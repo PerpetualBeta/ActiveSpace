@@ -23,6 +23,7 @@
 		AA000056 /* SpaceSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000036 /* SpaceSelectorView.swift */; };
 		AA000057 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000039 /* Assets.xcassets */; };
 		AA000060 /* JorvikAboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000070 /* JorvikAboutView.swift */; };
+		AA000017 /* JorvikPermissionWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000018 /* JorvikPermissionWatcher.swift */; };
 		AA0000A0 /* CursorFence.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000A1 /* CursorFence.swift */; };
 		AA000061 /* JorvikSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000071 /* JorvikSettingsView.swift */; };
 		AA000063 /* JorvikMenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000073 /* JorvikMenuBuilder.swift */; };
@@ -84,6 +85,7 @@
 		AA000039 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA000042 /* ActiveSpace.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ActiveSpace.entitlements; sourceTree = "<group>"; };
 		AA000070 /* JorvikAboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikAboutView.swift; sourceTree = "<group>"; };
+		AA000018 /* JorvikPermissionWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikPermissionWatcher.swift; sourceTree = "<group>"; };
 		AA000071 /* JorvikSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikSettingsView.swift; sourceTree = "<group>"; };
 		AA000073 /* JorvikMenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikMenuBuilder.swift; sourceTree = "<group>"; };
 		AA000075 /* JorvikWindowHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikWindowHelper.swift; sourceTree = "<group>"; };
@@ -175,6 +177,7 @@
 			isa = PBXGroup;
 			children = (
 				AA000070 /* JorvikAboutView.swift */,
+				AA000018 /* JorvikPermissionWatcher.swift */,
 				AA000071 /* JorvikSettingsView.swift */,
 				AA000073 /* JorvikMenuBuilder.swift */,
 				AA000075 /* JorvikWindowHelper.swift */,
@@ -291,6 +294,7 @@
 				AA000055 /* MenuBarIcon.swift in Sources */,
 				AA000056 /* SpaceSelectorView.swift in Sources */,
 				AA000060 /* JorvikAboutView.swift in Sources */,
+				AA000017 /* JorvikPermissionWatcher.swift in Sources */,
 				AA000061 /* JorvikSettingsView.swift in Sources */,
 				AA000063 /* JorvikMenuBuilder.swift in Sources */,
 				AA000065 /* JorvikWindowHelper.swift in Sources */,

@@ -708,6 +708,11 @@ private extension View {
 /// settings UI here, the closure passed to `JorvikSettingsView` would have
 /// no way to react to changes.
 private struct ActiveSpaceSettingsContent: View {
+    /// Kept current by JorvikKit — see `JorvikPermissionWatcher`. This row used to read
+    /// `AXIsProcessTrusted()` inline in `body`, so nothing ever re-rendered it and granting
+    /// the permission left it still asking.
+    @StateObject private var accessibility = JorvikPermissionWatcher.accessibility()
+
 
     let delegate: AppDelegate
     @State private var rowWidth: Int
@@ -841,7 +846,7 @@ private struct ActiveSpaceSettingsContent: View {
                 HStack {
                     Text("Accessibility")
                     Spacer()
-                    if AXIsProcessTrusted() {
+                    if accessibility.isGranted {
                         Label("Granted", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                             .font(.caption)
