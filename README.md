@@ -1,6 +1,6 @@
 # ActiveSpace
 
-A macOS menu-bar app that shows your current Mission Control space and switches spaces instantly — by click, popover button, or configurable keyboard shortcut. Optionally replaces `Cmd-Tab` with a space-aware switcher that only shows apps with windows on the current space.
+A macOS menu-bar app that shows your current Mission Control space and switches spaces instantly — by click, popover button, or configurable keyboard shortcut. Optionally replaces command-Tab with a space-aware switcher that only shows apps with windows on the current space.
 
 ## What it does
 
@@ -9,7 +9,7 @@ A macOS menu-bar app that shows your current Mission Control space and switches 
 - **Configurable keyboard shortcuts** for next/previous space. They wrap around at the ends by default; a **Navigation** setting switches to a hard stop, where Previous on the first space and Next on the last space are no-ops.
 - **Optional grid layout.** Tell ActiveSpace your conceptual row width — say, 4 if you keep 8 spaces and think of them as 4×2 — and the popover reflows into rows of that width. Two extra hotkeys, **Space Up** and **Space Down**, navigate ±rowWidth with column-cycling wrap (so `Space Down` from the bottom row wraps to the top of the same column). With grid mode on, **Next Space** and **Previous Space** become row-aware too — Next from the last column of any row wraps to the first column of the same row instead of stepping into the next row. Set row width to 0 to keep the original linear strip.
 - **Instant transitions.** No animation, no sliding, no wait — across single-display, dual-display, lid-open, and lid-closed configurations.
-- **Optional space-aware Cmd-Tab Switcher** (off by default). When on, `Cmd-Tab` shows only apps with windows on the current space — including minimised windows and windows of hidden apps. Cycle with `Tab` or arrows, reverse with `Shift-Tab`, commit by releasing `Cmd` or pressing `Return`, cancel with `Esc`. When off, native `Cmd-Tab` is completely untouched.
+- **Optional space-aware command-Tab Switcher** (off by default). When on, `command` `tab` shows only apps with windows on the current space — including minimised windows and windows of hidden apps. Cycle with `tab` or arrows, reverse with `shift` `tab`, commit by releasing `command` or pressing `return`, cancel with `esc`. When off, native `command` `tab` is completely untouched.
 - **Follow app across spaces.** Bind a shortcut to make the frontmost app's windows appear on every Mission Control space — the same effect as the Dock's right-click *Options → Assign To → All Desktops*. Toggle the same shortcut again and the app returns to the space it was on when you first followed it.
 
 ## Installation
@@ -32,7 +32,7 @@ Launch ActiveSpace from `/Applications` and grant Accessibility and Input Monito
 Right-click the menu-bar bubble and choose **Settings…**:
 
 - **Keyboard shortcuts** — Next Space, Previous Space, and Follow App Across Spaces hotkeys (plus Space Up and Space Down when grid layout is enabled).
-- **Switcher** — toggle the space-aware Cmd-Tab replacement.
+- **Switcher** — toggle the space-aware command-Tab replacement.
 - **Grid** — optional row width for the popover layout and the Space Up / Space Down hotkeys.
 - **Navigation** — **Wrap around at the ends** (on by default). Turn it off for a hard stop: Previous on the first space and Next on the last space become no-ops. In grid mode the same applies at the row and column edges.
 - **Permissions** — live status of Accessibility and Input Monitoring with grant buttons.
@@ -47,7 +47,7 @@ Two are required, both manageable from Settings:
 - **Accessibility** — required for space switching. macOS prompts on first launch.
 - **Input Monitoring** — required for keyboard shortcuts and the Switcher. If not granted, ActiveSpace shows an alert with a direct link to the correct System Settings pane.
 
-To avoid conflicts with macOS's built-in shortcuts, disable `Control-←` and `Control-→` (and `Control-↑` / `Control-↓` if you bind those to Space Up / Space Down) in System Settings → Keyboard → Keyboard Shortcuts → Mission Control.
+To avoid conflicts with macOS's built-in shortcuts, disable `control` `left` and `control` `right` (and `control` `up` / `control` `down` if you bind those to Space Up / Space Down) in System Settings → Keyboard → Keyboard Shortcuts → Mission Control.
 
 ## How it works
 
@@ -73,7 +73,7 @@ The virtual is created automatically when only a single physical display is pres
 | `MenuBarIcon.swift` | Numbered bubble rendering |
 | `SpaceSelectorView.swift` | SwiftUI popover (3+ spaces) |
 | `TransitionOverlay.swift` | Per-screen blur overlay that masks intermediate-space flashes during multi-step jumps |
-| `SwitcherController.swift` | State machine for the space-aware Cmd-Tab switcher |
+| `SwitcherController.swift` | State machine for the space-aware command-Tab switcher |
 | `SwitcherHUDWindow.swift` | Borderless HUD with proportional icon scaling |
 | `SwitcherAppResolver.swift` | Per-window space membership via `SLSCopySpacesForWindows`; pre-warmed app-icon cache |
 | `SwitcherAppStack.swift` | Per-space MRU bundle-ID stack |
