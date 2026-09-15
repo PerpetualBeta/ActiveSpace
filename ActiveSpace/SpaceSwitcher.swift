@@ -32,21 +32,25 @@ enum SpaceSwitcher {
             aslog("switchTo(\(index)): no SpaceInfo — ignoring")
             return
         }
-        guard AXIsProcessTrusted() else {
-            aslog("switchTo(\(index)): Accessibility permission not granted")
-            ensureAccessibility()
-            return
-        }
-
         let current = observer.currentSpaceIndex
         if index == current {
             aslog("switchTo(\(index)): already on target, skipping")
             return
         }
 
+        // Accessibility is only needed to POST synthetic events, which only the
+        // gesture path does. The direct CGS call needs no permission at all, so
+        // asking for it there would refuse a switch we are perfectly able to
+        // make. With the virtual display retired on macOS 27 a single-monitor
+        // Mac never reaches the gesture path, so it never needs the grant.
         if isSingleDisplay() {
             directSwitch(to: target, from: observer.spaceInfo(forIndex: current))
         } else {
+            guard AXIsProcessTrusted() else {
+                aslog("switchTo(\(index)): gesture path needs Accessibility, not granted")
+                ensureAccessibility()
+                return
+            }
             gestureSwitch(from: current, to: index, observer: observer)
         }
     }
@@ -267,53 +271,94 @@ enum SpaceSwitcher {
     private static let kPhaseBegan:              Int64 = 1
     private static let kPhaseEnded:              Int64 = 4
 
+    /// The "changed" phase, only posted on macOS 27+. **The value 2 is inferred**
+    /// from Began=1 / Ended=4 reading as a bitmask, not observed, so it is a knob:
+    ///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.gestureChangedPhase -int 2
+    private static var kPhaseChanged: Int64 {
+        let v = UserDefaults.standard.integer(forKey: "ActiveSpace.gestureChangedPhase")
+        return v > 0 ? Int64(v) : 2
+    }
+
+    /// Milliseconds between gesture phases on macOS 27+. Zero on earlier systems.
+    ///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.gesturePhaseDelayMs -int 10
+    private static var gesturePhaseDelayMs: UInt32 {
+        let v = UserDefaults.standard.integer(forKey: "ActiveSpace.gesturePhaseDelayMs")
+        return v > 0 ? UInt32(v) : 10
+    }
+
+    private static var needsPacedGesture: Bool {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+    }
+
     /// Posts a complete Begin + End dock-swipe gesture pair that advances the
     /// visible cycle by one space, at high velocity so the Dock skips its
     /// sliding animation. The Dock clamps one gesture = one space regardless
     /// of progress magnitude, so multi-space jumps require posting N of these.
+    /// Post a single phase of a synthetic dock swipe.
+    ///
+    /// Split out of `postSwitchGesture` on 2026-09-15 so macOS 27 can be given an
+    /// intermediate "changed" phase with a gap either side. Every field is
+    /// unchanged from the version that worked up to macOS 26.
+    private static func postPhase(_ phase: Int64, right: Bool, progress: Double, velocity: Double) {
+        let flagDir: Int64 = right ? 1 : 0
+
+        guard let gesture = CGEvent(source: nil),
+              let dock    = CGEvent(source: nil) else { return }
+
+        gesture.type = CGEventType(rawValue: UInt32(kCGSEventGesture))!
+        gesture.setIntegerValueField(fieldEventSubType, value: kCGSEventGesture)
+
+        dock.type = CGEventType(rawValue: UInt32(kCGSEventDockControl))!
+        dock.setIntegerValueField(fieldEventSubType,   value: kCGSEventDockControl)
+        dock.setIntegerValueField(fieldHIDType,        value: kIOHIDEventTypeDockSwipe)
+        dock.setIntegerValueField(fieldGesturePhase,   value: phase)
+        dock.setIntegerValueField(fieldScrollFlagBits, value: flagDir)
+        dock.setIntegerValueField(fieldSwipeMotion,    value: kGestureMotionHorizontal)
+        dock.setDoubleValueField(fieldScrollY,         value: 0)
+        dock.setDoubleValueField(fieldZoomDeltaX,      value: Double(Float.leastNonzeroMagnitude))
+        if progress != 0 { dock.setDoubleValueField(fieldSwipeProgress, value: progress) }
+        if velocity != 0 {
+            dock.setDoubleValueField(fieldSwipeVelocityX, value: velocity)
+            dock.setDoubleValueField(fieldSwipeVelocityY, value: 0)
+        }
+
+        dock.post(tap: .cgSessionEventTap)
+        gesture.post(tap: .cgSessionEventTap)
+    }
+
+    /// Drive one space-worth of dock swipe.
+    ///
+    /// **macOS 26 and earlier:** began then ended, posted back to back. This is
+    /// what shipped for years and it works there.
+    ///
+    /// **macOS 27:** the same two events are ignored. The Dock appears to need a
+    /// few milliseconds to register each phase, and an intermediate "changed"
+    /// phase between them — the finding is InstantSpaceSwitcher's (PR #88), which
+    /// reports it working on this exact build, 26A428.
+    ///
+    /// **NOT YET VERIFIED HERE.** The probe that measured everything else refuses
+    /// to test gesture modes without an Accessibility grant, because a permission
+    /// refusal is indistinguishable from a dead mechanism and would have recorded
+    /// a false negative. It only matters on a real multi-display setup: with the
+    /// virtual display retired, a single-monitor Mac never reaches this code.
+    /// A competing account (MouseDragFix) holds that macOS 27 rejects
+    /// field-encoded gestures outright and that a real IOHIDEvent attached via
+    /// `SLEventSetIOHIDEvent` is required. If pacing turns out not to be enough,
+    /// that is the next thing to try, not more tuning of these numbers.
     private static func postSwitchGesture(right: Bool) {
-        let flagDir: Int64   = right ? 1 : 0
-        let progress: Double = right ? 2.0 : -2.0
+        let progress: Double = right ?  2.0 : -2.0
         let velocity: Double = right ? 400.0 : -400.0
 
-        guard let beginGesture = CGEvent(source: nil),
-              let beginDock    = CGEvent(source: nil) else { return }
+        postPhase(kPhaseBegan, right: right, progress: 0, velocity: 0)
 
-        beginGesture.type = CGEventType(rawValue: UInt32(kCGSEventGesture))!
-        beginGesture.setIntegerValueField(fieldEventSubType, value: kCGSEventGesture)
+        if needsPacedGesture {
+            let gap = gesturePhaseDelayMs * 1000
+            usleep(gap)
+            postPhase(kPhaseChanged, right: right, progress: progress / 2, velocity: 0)
+            usleep(gap)
+        }
 
-        beginDock.type = CGEventType(rawValue: UInt32(kCGSEventDockControl))!
-        beginDock.setIntegerValueField(fieldEventSubType,   value: kCGSEventDockControl)
-        beginDock.setIntegerValueField(fieldHIDType,        value: kIOHIDEventTypeDockSwipe)
-        beginDock.setIntegerValueField(fieldGesturePhase,   value: kPhaseBegan)
-        beginDock.setIntegerValueField(fieldScrollFlagBits, value: flagDir)
-        beginDock.setIntegerValueField(fieldSwipeMotion,    value: kGestureMotionHorizontal)
-        beginDock.setDoubleValueField(fieldScrollY,         value: 0)
-        beginDock.setDoubleValueField(fieldZoomDeltaX,      value: Double(Float.leastNonzeroMagnitude))
-
-        beginDock.post(tap: .cgSessionEventTap)
-        beginGesture.post(tap: .cgSessionEventTap)
-
-        guard let endGesture = CGEvent(source: nil),
-              let endDock    = CGEvent(source: nil) else { return }
-
-        endGesture.type = CGEventType(rawValue: UInt32(kCGSEventGesture))!
-        endGesture.setIntegerValueField(fieldEventSubType, value: kCGSEventGesture)
-
-        endDock.type = CGEventType(rawValue: UInt32(kCGSEventDockControl))!
-        endDock.setIntegerValueField(fieldEventSubType,   value: kCGSEventDockControl)
-        endDock.setIntegerValueField(fieldHIDType,        value: kIOHIDEventTypeDockSwipe)
-        endDock.setIntegerValueField(fieldGesturePhase,   value: kPhaseEnded)
-        endDock.setDoubleValueField(fieldSwipeProgress,   value: progress)
-        endDock.setIntegerValueField(fieldScrollFlagBits, value: flagDir)
-        endDock.setIntegerValueField(fieldSwipeMotion,    value: kGestureMotionHorizontal)
-        endDock.setDoubleValueField(fieldScrollY,         value: 0)
-        endDock.setDoubleValueField(fieldSwipeVelocityX,  value: velocity)
-        endDock.setDoubleValueField(fieldSwipeVelocityY,  value: 0)
-        endDock.setDoubleValueField(fieldZoomDeltaX,      value: Double(Float.leastNonzeroMagnitude))
-
-        endDock.post(tap: .cgSessionEventTap)
-        endGesture.post(tap: .cgSessionEventTap)
+        postPhase(kPhaseEnded, right: right, progress: progress, velocity: velocity)
     }
 
     // MARK: - Display count

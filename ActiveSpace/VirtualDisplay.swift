@@ -88,12 +88,43 @@ enum VirtualDisplay {
 
     // MARK: - Reconcile
 
+    /// macOS 27 stopped acting on the synthetic dock-swipe this app posts, which
+    /// makes the virtual display actively harmful rather than merely unnecessary.
+    ///
+    /// The virtual exists to flip `NSScreen.screens.count` to 2 so that gesture
+    /// routing works on a single-monitor Mac. But `SpaceSwitcher` picks its
+    /// mechanism from that same count: two screens means gesture, one means the
+    /// direct CGS call. So on macOS 27 the virtual forces every switch into the
+    /// one path the OS now ignores, while simultaneously hiding the path that
+    /// still works.
+    ///
+    /// Measured 2026-09-15 on 27.0 (26A428) with a signed probe, scoring each
+    /// attempt by whether the on-screen window SET changed rather than by the
+    /// space number, because the number moves in the failing case too:
+    ///
+    ///   - one display,  direct call  → space moved, 11 windows became 12 ✓
+    ///   - two displays, direct call  → space moved, the same 11 windows stayed ✗
+    ///   - either,       gesture      → nothing moved at all ✗
+    ///
+    /// Gated on the major version rather than removed outright: on macOS 26 and
+    /// earlier the gesture still works and the virtual still earns its place, and
+    /// there is no machine here to re-test those.
+    ///
+    /// Override either way with:
+    ///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.forceVirtualDisplay -bool YES|NO
+    private static var virtualDisplayWanted: Bool {
+        if let forced = UserDefaults.standard.object(forKey: "ActiveSpace.forceVirtualDisplay") as? Bool {
+            return forced
+        }
+        return ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27
+    }
+
     private static func reconcile() {
         let realCount = physicalDisplayCount()
         let helperRunning = (helperProcess?.isRunning ?? false)
-        let needHelper = (realCount <= 1)
+        let needHelper = (realCount <= 1) && virtualDisplayWanted
 
-        aslog("VirtualDisplay.reconcile: real=\(realCount) helperRunning=\(helperRunning) needHelper=\(needHelper)")
+        aslog("VirtualDisplay.reconcile: real=\(realCount) helperRunning=\(helperRunning) needHelper=\(needHelper) wanted=\(virtualDisplayWanted)")
 
         if needHelper && !helperRunning {
             launchHelper()

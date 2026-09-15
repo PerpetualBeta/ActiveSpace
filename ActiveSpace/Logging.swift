@@ -7,6 +7,8 @@ import Foundation
 ///
 ///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.debugLogging -bool YES
 ///
+/// Writes to ~/Library/Logs/ActiveSpace/debug.log.
+///
 /// Then relaunch. The flag is read once at launch for speed; toggling at
 /// runtime has no effect until the next process start.
 private let debugLoggingEnabled: Bool =
@@ -20,7 +22,14 @@ private let logFile: FileHandle? = {
     // FD; without O_APPEND on both sides the two processes' writes race
     // and clobber each other during the helper's startup burst.
     // O_TRUNC starts each app launch with an empty log.
-    let path = "/tmp/activespace.log"
+    //
+    // ~/Library/Logs/ActiveSpace/, not /tmp: a world-writable directory is the
+    // wrong home for anything, and parallel agent jobs share /tmp and clobber
+    // each other's files. Moved 2026-09-15.
+    let dir = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Logs/ActiveSpace", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let path = dir.appendingPathComponent("debug.log").path
     let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0o644)
     guard fd >= 0 else { return nil }
     return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
