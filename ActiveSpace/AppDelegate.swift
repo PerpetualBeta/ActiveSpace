@@ -133,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Conceptual grid row width. 0 = linear (default), ≥2 = grid mode active.
     /// Drives the popover layout and gates the Space Up / Space Down hotkeys.
-    var rowWidth: Int = 0 { didSet { _rowWidth = rowWidth } }
+    var rowWidth: Int = 0 { didSet { _rowWidth = rowWidth; updateEventTap() } }
 
     /// When true (default), Next/Previous (and grid Up/Down) wrap around at the
     /// ends — Next from the last space lands on the first, Previous from the
@@ -180,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SpaceSwitcher.ensureAccessibility()
         loadShortcuts()
         republishHotkeys()
-        setupEventTap()
+        updateEventTap()
 
         // Drift detection → diagnostic log. The launchd keep-alive agent
         // still provides crash-resilience respawn; the monitor just
@@ -312,6 +312,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var hasShownInputMonitoringAlert = false
 
+    /// Does anything still need the keyboard tap?
+    ///
+    /// The tap is the only reason this app asks for Input Monitoring, so the
+    /// honest thing is to want it only when a feature uses it. Since the macOS
+    /// 27 rework that means: the space-aware Command-Tab, the grid's Space Up
+    /// and Space Down, or Follow App Across Spaces. Previous and Next Space used
+    /// to be here too; they are macOS's own shortcuts now.
+    private var needsEventTap: Bool {
+        if switcherEnabled { return true }
+        if followKeyCode != 0 { return true }
+        if rowWidth >= 2 && (upKeyCode != 0 || downKeyCode != 0) { return true }
+        return false
+    }
+
+    /// Create or destroy the tap to match what is configured. Safe to call as
+    /// often as you like; it only acts on a change.
+    func updateEventTap() {
+        if needsEventTap {
+            setupEventTap()
+        } else if _eventTap != nil {
+            teardownEventTap()
+        }
+    }
+
+    private func teardownEventTap() {
+        guard let tap = _eventTap else { return }
+        CGEvent.tapEnable(tap: tap, enable: false)
+        CFMachPortInvalidate(tap)
+        _eventTap = nil
+        aslog("event tap torn down — nothing configured needs it, so Input Monitoring is not required")
+    }
+
     private func setupEventTap() {
         guard _eventTap == nil else { return }
 
@@ -428,7 +460,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wrapAround = d.object(forKey: "wrapAround") as? Bool ?? true
     }
 
+    /// Called after any shortcut changes: a binding cleared may have been the
+    /// last thing keeping the tap alive.
     func saveShortcuts() {
+        defer { updateEventTap() }
         let d = UserDefaults.standard
         d.set(Int(nextKeyCode), forKey: "nextSpaceKeyCode")
         d.set(Int(nextModifiers.rawValue), forKey: "nextSpaceModifiers")
@@ -486,6 +521,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func saveSwitcherEnabled() {
+        defer { updateEventTap() }
         UserDefaults.standard.set(switcherEnabled, forKey: "switcherEnabled")
     }
 
