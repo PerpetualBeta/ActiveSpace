@@ -375,11 +375,54 @@ enum SpaceSwitcher {
         case .enabled(let binding):
             aslog("switchTo(\(index)): sending its Mission Control key (code \(binding.keyCode), flags \(binding.flags.rawValue))")
             MissionControlShortcuts.post(binding)
+            handBackTheMenuBar()
             MenuBarWatch.observeAfterSwitch(to: index)
         case .disabled:
             aslog("switchTo(\(index)): the Mission Control shortcut for this space is switched off")
         case .missing:
             aslog("switchTo(\(index)): macOS has no shortcut bound for this space")
+        }
+    }
+
+    /// Give the menu bar an owner after a switch the popover started.
+    ///
+    /// **Removed in the macOS 27 cull and restored the same day**, which is the
+    /// interesting part. It used to sit after the synthetic gesture, and the
+    /// reasoning for dropping it was that macOS handles focus itself when it
+    /// performs the switch. That is true when the USER presses the key:
+    /// ActiveSpace is not active, and whichever app already owned the menu bar
+    /// keeps it.
+    ///
+    /// It is false when the popover has just run `NSApp.activate`. ActiveSpace
+    /// is then the active app, and being an accessory it owns no menu bar, so on
+    /// arrival there is nothing to draw one.
+    ///
+    /// Measured 2026-09-16: the bar went for three seconds on every popover jump
+    /// to space 1 and on no other. Space 1 is the case that exposes it because
+    /// every window there is assigned to all desktops, so nothing ARRIVES when
+    /// you land and macOS has no new window to focus. Anywhere else it focuses
+    /// an ordinary window and the bar returns by itself.
+    ///
+    /// Only runs when we are the active app, so a keyboard switch never steals
+    /// the user's focus from whatever they were using.
+    private static func handBackTheMenuBar() {
+        guard NSApp.isActive else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            guard let windowList = CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+            ) as? [[String: Any]] else { return }
+
+            for window in windowList {
+                guard let layer = window[kCGWindowLayer as String] as? Int, layer == 0,
+                      let pid = window[kCGWindowOwnerPID as String] as? pid_t else { continue }
+                if let app = NSRunningApplication(processIdentifier: pid),
+                   app.activationPolicy == .regular, !app.isHidden {
+                    app.activate()
+                    aslog("handBackTheMenuBar: activated \(app.localizedName ?? "?") (pid \(pid))")
+                    return
+                }
+            }
+            aslog("handBackTheMenuBar: no suitable window found — the bar may stay blank")
         }
     }
 

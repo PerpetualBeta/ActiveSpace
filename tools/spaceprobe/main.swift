@@ -818,6 +818,42 @@ case "activation":
     say("If B lost the bar and A did not, activation is the cause.")
     say("Started on space \(s0.currentIndex), finished on \(readSpaces()?.currentIndex ?? -1).")
 
+case "totarget":
+    // Repeatedly switch away and back to one space, keystroke only, watching the
+    // bar. Written to test whether space 1 misbehaves on its own, without the
+    // popover, once windows assigned to all desktops live there.
+    let want = args.count > 1 ? (Int(args[1]) ?? 1) : 1
+    let rounds = args.count > 2 ? (Int(args[2]) ?? 6) : 6
+    say("Switching to space \(want) \(rounds) times, keystroke only, no popover.")
+    var lost = 0
+    for r in 1...rounds {
+        guard let s = readSpaces() else { break }
+        // Step away first, so the switch to the target is a real move.
+        let away = want == s.total ? 1 : want + 1
+        if s.currentIndex != away, let b = readBinding(id: 118 + away - 1), b.enabled {
+            postBinding(b); settle(1.2)
+        }
+        guard let b = readBinding(id: 118 + want - 1), b.enabled else { break }
+        let before = readSpaces()?.currentIndex ?? -1
+        postBinding(b)
+        var elapsed = 0.0, goneAt: Double? = nil, backAt: Double? = nil
+        while elapsed < 5.0 {
+            settle(0.1); elapsed += 0.1
+            let v = menuBarIsVisible()
+            if !v && goneAt == nil { goneAt = elapsed }
+            if v, goneAt != nil, backAt == nil { backAt = elapsed }
+        }
+        if let g = goneAt {
+            lost += 1
+            let b2 = backAt.map { String(format: "back after %.1fs", $0 - g) } ?? "STILL GONE"
+            say(String(format: "  round %d: %d -> %d, bar GONE at %.1fs, %@", r, before, want, g, b2))
+        } else {
+            say("  round \(r): \(before) -> \(want), bar stayed up")
+        }
+    }
+    say("")
+    say("\(lost) of \(rounds) keystroke-only switches to space \(want) lost the menu bar.")
+
 case "watch":
     // Sample continuously and report every transition. Posts nothing and
     // switches nothing: whatever happens is the machine's own doing.
