@@ -375,7 +375,7 @@ enum SpaceSwitcher {
         case .enabled(let binding):
             aslog("switchTo(\(index)): sending its Mission Control key (code \(binding.keyCode), flags \(binding.flags.rawValue))")
             MissionControlShortcuts.post(binding)
-            handBackTheMenuBar()
+            handBackTheMenuBar(to: index, observer: observer)
             MenuBarWatch.observeAfterSwitch(to: index)
         case .disabled:
             aslog("switchTo(\(index)): the Mission Control shortcut for this space is switched off")
@@ -415,9 +415,37 @@ enum SpaceSwitcher {
     ///
     /// Only runs when we are the active app, so a keyboard switch never steals
     /// the user's focus from whatever they were using.
-    private static func handBackTheMenuBar() {
+    private static func handBackTheMenuBar(to index: Int, observer: SpaceObserver) {
         guard NSApp.isActive else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        waitForArrival(at: index, observer: observer, attempt: 0)
+    }
+
+    /// Don't pick a window until the space has actually changed.
+    ///
+    /// The first cut sampled the window list 150ms after posting the key. A
+    /// space transition takes longer than that, so it was sometimes reading the
+    /// space being LEFT: the log showed the same app activated for a switch to
+    /// space 4 and a switch to space 1. Activating an app whose windows are
+    /// elsewhere makes macOS follow it, so that race could have bounced the user
+    /// straight back where they came from.
+    ///
+    /// Polls every 50ms for up to 1.5s. If the space never arrives, do nothing
+    /// rather than guess: a missing menu bar for a moment is better than being
+    /// thrown onto the wrong desk.
+    private static func waitForArrival(at index: Int, observer: SpaceObserver, attempt: Int) {
+        guard attempt < 30 else {
+            aslog("handBackTheMenuBar: space \(index) never arrived after 1.5s — leaving focus alone")
+            return
+        }
+        observer.refresh()
+        guard observer.currentSpaceIndex == index else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                waitForArrival(at: index, observer: observer, attempt: attempt + 1)
+            }
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             guard let windowList = CGWindowListCopyWindowInfo(
                 [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
             ) as? [[String: Any]] else { return }
@@ -428,7 +456,7 @@ enum SpaceSwitcher {
                 if let app = NSRunningApplication(processIdentifier: pid),
                    app.activationPolicy == .regular, !app.isHidden {
                     app.activate()
-                    aslog("handBackTheMenuBar: activated \(app.localizedName ?? "?") (pid \(pid))")
+                    aslog("handBackTheMenuBar: space \(index) arrived, activated \(app.localizedName ?? "?") (pid \(pid))")
                     return
                 }
             }
