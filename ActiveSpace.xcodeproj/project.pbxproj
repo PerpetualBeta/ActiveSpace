@@ -24,15 +24,12 @@
 		AA000057 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000039 /* Assets.xcassets */; };
 		AA000060 /* JorvikAboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000070 /* JorvikAboutView.swift */; };
 		AA000017 /* JorvikPermissionWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000018 /* JorvikPermissionWatcher.swift */; };
-		AA0000A0 /* CursorFence.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000A1 /* CursorFence.swift */; };
 		AA000061 /* JorvikSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000071 /* JorvikSettingsView.swift */; };
 		AA000063 /* JorvikMenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000073 /* JorvikMenuBuilder.swift */; };
 		AA000005 /* JorvikApplicationMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000006 /* JorvikApplicationMenu.swift */; };
 		AA000065 /* JorvikWindowHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000075 /* JorvikWindowHelper.swift */; };
 		AA000066 /* JorvikShortcutRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000076 /* JorvikShortcutRecorder.swift */; };
-		AA000067 /* VirtualDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000077 /* VirtualDisplay.swift */; };
 		AA000069 /* Logging.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000082 /* Logging.swift */; };
-		AA00006A /* TransitionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000083 /* TransitionOverlay.swift */; };
 		AA000091 /* SwitcherController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000090 /* SwitcherController.swift */; };
 		AA000093 /* SwitcherAppResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000092 /* SwitcherAppResolver.swift */; };
 		AA000095 /* SwitcherHUDWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000094 /* SwitcherHUDWindow.swift */; };
@@ -92,10 +89,7 @@
 		AA000006 /* JorvikApplicationMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikApplicationMenu.swift; sourceTree = "<group>"; };
 		AA000075 /* JorvikWindowHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikWindowHelper.swift; sourceTree = "<group>"; };
 		AA000076 /* JorvikShortcutRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikShortcutRecorder.swift; sourceTree = "<group>"; };
-		AA000077 /* VirtualDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplay.swift; sourceTree = "<group>"; };
 		AA000082 /* Logging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging.swift; sourceTree = "<group>"; };
-		AA000083 /* TransitionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransitionOverlay.swift; sourceTree = "<group>"; };
-		AA0000A1 /* CursorFence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorFence.swift; sourceTree = "<group>"; };
 		AA000090 /* SwitcherController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherController.swift; sourceTree = "<group>"; };
 		AA000092 /* SwitcherAppResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherAppResolver.swift; sourceTree = "<group>"; };
 		AA000094 /* SwitcherHUDWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherHUDWindow.swift; sourceTree = "<group>"; };
@@ -154,10 +148,7 @@
 				AA000037 /* Info.plist */,
 				AA000039 /* Assets.xcassets */,
 				AA000042 /* ActiveSpace.entitlements */,
-				AA000077 /* VirtualDisplay.swift */,
 				AA000082 /* Logging.swift */,
-				AA000083 /* TransitionOverlay.swift */,
-				AA0000A1 /* CursorFence.swift */,
 				AA000090 /* SwitcherController.swift */,
 				AA000092 /* SwitcherAppResolver.swift */,
 				AA000094 /* SwitcherHUDWindow.swift */,
@@ -201,7 +192,6 @@
 				AA000015 /* Frameworks */,
 				AA000016 /* Resources */,
 				5EF0B3812F95386B00E097E2 /* CopyFiles */,
-				5E2FCBE42FA6B8D100DA38EE /* Embed VirtualDisplayHost */,
 				AA000603 /* Embed Frameworks */,
 			);
 			buildRules = (
@@ -258,25 +248,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		5E2FCBE42FA6B8D100DA38EE /* Embed VirtualDisplayHost */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Embed VirtualDisplayHost";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "  # Build VirtualDisplayHost (signed, hardened-runtime) and embed it\n  # inside ActiveSpace.app/Contents/Helpers/. ActiveSpace launches it\n  # at runtime via Process(); the helper owns the off-screen virtual\n  # display that disarms the macOS-16 single-monitor gesture-routing\n  # bug.\n  \"${SRCROOT}/VirtualDisplayHost/build.sh\"\n\n  mkdir -p \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers\"\n  rm -rf \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers/VirtualDisplayHost.app\"\n  cp -R \"${SRCROOT}/VirtualDisplayHost/VirtualDisplayHost.app\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers/VirtualDisplayHost.app\"\n";
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -304,10 +275,7 @@
 				AA000065 /* JorvikWindowHelper.swift in Sources */,
 				AA000066 /* JorvikShortcutRecorder.swift in Sources */,
 				AA000098 /* JorvikHotkeyRegistry.swift in Sources */,
-				AA000067 /* VirtualDisplay.swift in Sources */,
 				AA000069 /* Logging.swift in Sources */,
-				AA00006A /* TransitionOverlay.swift in Sources */,
-				AA0000A0 /* CursorFence.swift in Sources */,
 				AA000091 /* SwitcherController.swift in Sources */,
 				AA000093 /* SwitcherAppResolver.swift in Sources */,
 				AA000095 /* SwitcherHUDWindow.swift in Sources */,

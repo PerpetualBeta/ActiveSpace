@@ -1,57 +1,252 @@
 import AppKit
 import CoreGraphics
 
-/// Switches Mission Control spaces. Uses two techniques depending on the
-/// display configuration, because each has different failure modes on the
-/// other:
+/// Reads, posts and (on request) enables the Mission Control keyboard shortcuts
+/// that macOS uses to switch spaces.
 ///
-///   - **Single display** → `CGSManagedDisplaySetCurrentSpace` (direct API).
-///     Instant, no flash, no progressive Dock-state corruption. The gesture
-///     approach degrades on single-display configs (windows/menu-bars stop
-///     repainting after repeated switches).
+/// **Why this exists.** ActiveSpace used to switch spaces itself, by synthesising
+/// a trackpad dock-swipe or by calling private CoreGraphics APIs. macOS 27 ended
+/// both: the synthetic gesture is ignored outright, and the direct call moves the
+/// space counter while leaving every window on screen, which strands the user on
+/// a desk they cannot click. Measured on 27.0 build 26A428; see
+/// `tools/spaceprobe/`.
 ///
-///   - **Multi-display (incl. spans-displays mode)** → synthetic dock-swipe
-///     gesture. The direct API only flips CGS's current-space flag without
-///     telling WindowServer to move windows or update Mission Control state,
-///     so spaces change numerically but windows stay put and F3 breaks.
-///     The gesture drives a full visual transition across all displays.
+/// Jonathan's decision, 2026-09-16, and it is the right shape: macOS switches
+/// spaces perfectly well, so send it the key the user already has bound and let
+/// it do the work. One mechanism for every display configuration, no private
+/// API, nothing to break when Apple changes the window server.
+///
+/// **Where the bindings live.** `com.apple.symbolichotkeys`, key
+/// `AppleSymbolicHotKeys`, one entry per shortcut id:
+///
+///   - `118 + N - 1` → "Switch to Desktop N"
+///   - `79` / `81`   → "Move left / right a space"
+///
+/// Each entry is `{ enabled: Bool, value: { parameters: [char, keyCode, modifiers] } }`
+/// where the modifiers use **NSEvent's** flag values, not CoreGraphics'.
+enum MissionControlShortcuts {
+
+    struct Binding {
+        var keyCode: CGKeyCode
+        var flags: CGEventFlags
+        var enabled: Bool
+    }
+
+    enum Status {
+        /// Bound and switched on. The only case that can switch a space.
+        case enabled(Binding)
+        /// macOS knows a key for it, but the shortcut is switched off.
+        case disabled(Binding)
+        /// No entry at all. Normal on a fresh Mac beyond the first desktops.
+        case missing
+    }
+
+    private static let domain = "com.apple.symbolichotkeys" as CFString
+    private static let key = "AppleSymbolicHotKeys" as CFString
+
+    /// Keycodes for the digits 1...9, used only when inventing a binding.
+    private static let digitKeyCodes: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+
+    static func shortcutID(forDesktop n: Int) -> Int { 118 + n - 1 }
+
+    // MARK: - Reading
+
+    static func status(forDesktop n: Int) -> Status {
+        guard let b = binding(id: shortcutID(forDesktop: n)) else { return .missing }
+        return b.enabled ? .enabled(b) : .disabled(b)
+    }
+
+    /// Read one shortcut. Returns nil when macOS has no entry for it.
+    static func binding(id: Int) -> Binding? {
+        guard let all = CFPreferencesCopyValue(key, domain,
+                                               kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+                as? [String: Any],
+              let entry = all[String(id)] as? [String: Any],
+              let value = entry["value"] as? [String: Any],
+              let params = value["parameters"] as? [Any], params.count >= 3,
+              let code = (params[1] as? NSNumber)?.intValue,
+              let mods = (params[2] as? NSNumber)?.uint64Value else { return nil }
+        let enabled = (entry["enabled"] as? Bool) ?? false
+        return Binding(keyCode: CGKeyCode(code),
+                       flags: cgFlags(fromNSEventFlags: mods),
+                       enabled: enabled)
+    }
+
+    /// NSEvent modifier flags → CGEventFlags.
+    ///
+    /// **`0x800000` must be carried across.** It is NSEvent's function-key
+    /// marker, and macOS registered these shortcuts with it. Dropping it as
+    /// "not a modifier the user holds" was tried on 2026-09-16 and killed the
+    /// desktop jumps that had worked three times in a row immediately before.
+    private static func cgFlags(fromNSEventFlags mods: UInt64) -> CGEventFlags {
+        var f: CGEventFlags = []
+        if mods & 0x20000  != 0 { f.insert(.maskShift) }
+        if mods & 0x40000  != 0 { f.insert(.maskControl) }
+        if mods & 0x80000  != 0 { f.insert(.maskAlternate) }
+        if mods & 0x100000 != 0 { f.insert(.maskCommand) }
+        if mods & 0x800000 != 0 { f.insert(.maskSecondaryFn) }
+        return f
+    }
+
+    // MARK: - Posting
+
+    /// Send a shortcut, as though the user had pressed it.
+    ///
+    /// **Only ever call this with a "Switch to Desktop N" binding.** Posting the
+    /// arrow bindings (`Move left/right a space`) opens Mission Control instead
+    /// of switching, because the function-key bit reads as the globe key. The
+    /// tell, when it happens, is the on-screen window count jumping from a
+    /// handful to every window on the Mac. Navigation never needs them: work out
+    /// which desktop you want and send that desktop's key.
+    static func post(_ b: Binding) {
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: b.keyCode, keyDown: true),
+              let up   = CGEvent(keyboardEventSource: nil, virtualKey: b.keyCode, keyDown: false) else { return }
+        down.flags = b.flags
+        up.flags = b.flags
+        down.post(tap: .cgSessionEventTap)
+        usleep(20_000)
+        up.post(tap: .cgSessionEventTap)
+    }
+
+    // MARK: - Enabling
+
+    enum EnableResult {
+        /// It was switched off; now on, with its existing key untouched.
+        case switchedOn(Binding)
+        /// There was no entry, so one was created. The key was chosen by us.
+        case created(Binding)
+        /// Already on. Nothing done.
+        case alreadyOn(Binding)
+        case failed(String)
+    }
+
+    /// Turn a desktop's shortcut on, on the user's behalf.
+    ///
+    /// Two cases, deliberately different:
+    ///
+    ///   - **An entry exists but is off.** Flip it and change nothing else, so
+    ///     the user keeps whatever key they or macOS chose.
+    ///   - **No entry exists.** Invent control+digit, which is macOS's own
+    ///     historical default for "Switch to Desktop N". Jonathan's call: stick
+    ///     with Apple's defaults rather than picking something clever.
+    ///
+    /// A preference write is not live until the shortcut system reloads, which
+    /// `activateSettings -u` does. Verified 2026-09-16 with its own control: with
+    /// the shortcut off the key does nothing, and after this call the same key
+    /// switches cleanly.
+    @discardableResult
+    static func enableDesktop(_ n: Int) -> EnableResult {
+        guard n >= 1 else { return .failed("desktop \(n) is not a desktop") }
+        let id = shortcutID(forDesktop: n)
+
+        var all = (CFPreferencesCopyValue(key, domain,
+                                          kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+                   as? [String: Any]) ?? [:]
+
+        let result: EnableResult
+        if var entry = all[String(id)] as? [String: Any],
+           let value = entry["value"] as? [String: Any],
+           let params = value["parameters"] as? [Any], params.count >= 3,
+           let code = (params[1] as? NSNumber)?.intValue,
+           let mods = (params[2] as? NSNumber)?.uint64Value {
+            let was = (entry["enabled"] as? Bool) ?? false
+            let b = Binding(keyCode: CGKeyCode(code),
+                            flags: cgFlags(fromNSEventFlags: mods),
+                            enabled: true)
+            if was { return .alreadyOn(b) }
+            entry["enabled"] = true
+            all[String(id)] = entry
+            result = .switchedOn(b)
+        } else {
+            guard n <= digitKeyCodes.count else {
+                return .failed("macOS has no default key for desktop \(n)")
+            }
+            let code = digitKeyCodes[n - 1]
+            all[String(id)] = [
+                "enabled": true,
+                "value": [
+                    "type": "standard",
+                    // [character, keyCode, modifiers]; 0x40000 is control.
+                    "parameters": [NSNumber(value: 65535),
+                                   NSNumber(value: Int(code)),
+                                   NSNumber(value: 0x40000)]
+                ]
+            ] as [String: Any]
+            result = .created(Binding(keyCode: code, flags: [.maskControl], enabled: true))
+        }
+
+        CFPreferencesSetValue(key, all as CFPropertyList, domain,
+                              kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        reloadShortcuts()
+        aslog("MissionControlShortcuts.enableDesktop(\(n)) → \(result)")
+        return result
+    }
+
+    private static func reloadShortcuts() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath:
+            "/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings")
+        task.arguments = ["-u"]
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            aslog("MissionControlShortcuts: activateSettings failed: \(error)")
+        }
+    }
+
+    /// Open the Mission Control shortcuts pane, for the "do it yourself" button.
+    static func openKeyboardShortcutSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.keyboard?Shortcuts") else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
+/// Works out which space to move to, then asks macOS to go there.
+///
+/// Everything here is index arithmetic plus one call to
+/// `MissionControlShortcuts`. The app no longer switches spaces itself; see that
+/// type for why.
 enum SpaceSwitcher {
 
     // MARK: - Public API
 
-    /// Prompts for Accessibility permission if not already granted.
+    /// Prompts for Accessibility permission if not already granted. Posting a
+    /// keystroke needs it, exactly as the old synthetic events did.
     static func ensureAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
     }
 
-    /// Switch to a specific space index (1-based). No wrap-around.
+    /// Switch to a specific space index (1-based).
     static func switchTo(index: Int, observer: SpaceObserver) {
         observer.refresh()
-        guard let target = observer.spaceInfo(forIndex: index) else {
-            aslog("switchTo(\(index)): no SpaceInfo — ignoring")
+        guard index >= 1, index <= observer.totalSpaces else {
+            aslog("switchTo(\(index)): out of range (total=\(observer.totalSpaces)) — ignoring")
             return
         }
+
         let current = observer.currentSpaceIndex
         if index == current {
             aslog("switchTo(\(index)): already on target, skipping")
             return
         }
 
-        // Accessibility is only needed to POST synthetic events, which only the
-        // gesture path does. The direct CGS call needs no permission at all, so
-        // asking for it there would refuse a switch we are perfectly able to
-        // make. With the virtual display retired on macOS 27 a single-monitor
-        // Mac never reaches the gesture path, so it never needs the grant.
-        if isSingleDisplay() {
-            directSwitch(to: target, from: observer.spaceInfo(forIndex: current))
-        } else {
-            guard AXIsProcessTrusted() else {
-                aslog("switchTo(\(index)): gesture path needs Accessibility, not granted")
-                ensureAccessibility()
-                return
-            }
-            gestureSwitch(from: current, to: index, observer: observer)
+        guard AXIsProcessTrusted() else {
+            aslog("switchTo(\(index)): Accessibility permission not granted")
+            ensureAccessibility()
+            return
+        }
+
+        switch MissionControlShortcuts.status(forDesktop: index) {
+        case .enabled(let binding):
+            aslog("switchTo(\(index)): sending its Mission Control key (code \(binding.keyCode), flags \(binding.flags.rawValue))")
+            MissionControlShortcuts.post(binding)
+        case .disabled:
+            aslog("switchTo(\(index)): the Mission Control shortcut for this space is switched off")
+        case .missing:
+            aslog("switchTo(\(index)): macOS has no shortcut bound for this space")
         }
     }
 
@@ -155,187 +350,5 @@ enum SpaceSwitcher {
         if target != current {
             switchTo(index: target, observer: observer)
         }
-    }
-
-    // MARK: - Single-display path (direct API)
-
-    private static func directSwitch(to target: SpaceInfo, from current: SpaceInfo?) {
-        let conn = CGSMainConnectionID()
-        aslog("directSwitch: display=\(target.displayIdentifier) current=\(current?.managedSpaceID ?? -1) → target=\(target.managedSpaceID)")
-        if let current {
-            CGSHideSpaces(conn, [current.managedSpaceID] as CFArray)
-        }
-        CGSShowSpaces(conn, [target.managedSpaceID] as CFArray)
-        CGSManagedDisplaySetCurrentSpace(conn,
-                                         target.displayIdentifier as CFString,
-                                         UInt64(target.managedSpaceID))
-
-        // SkyLight: tell WindowServer to complete the switch — this may be the
-        // missing step that prevents window bleed-through on single display.
-        let rc = SLSEnsureSpaceSwitchToActiveProcess(conn)
-        aslog("directSwitch: SLSEnsureSpaceSwitchToActiveProcess → \(rc)")
-
-        // Reset menu bar on the target space to fix any coordinate confusion.
-        let mrc = SLSSpaceResetMenuBar(conn, UInt64(target.managedSpaceID))
-        aslog("directSwitch: SLSSpaceResetMenuBar → \(mrc)")
-    }
-
-    // MARK: - Multi-display path (synthetic dock-swipe gesture)
-
-    private static func gestureSwitch(from current: Int, to target: Int, observer: SpaceObserver) {
-        // The gesture doesn't wrap, so for wraparound we walk back the long way:
-        // (total - 1) spaces in the opposite direction. Each dock-swipe advances
-        // by exactly one space — the Dock clamps larger progress values.
-        let delta = target - current
-        let steps: Int
-        let right: Bool
-        if delta > 0 {
-            steps = delta
-            right = true
-        } else if delta < 0 {
-            steps = -delta
-            right = false
-        } else {
-            return
-        }
-
-        aslog("gestureSwitch: current=\(current) → target=\(target) via \(steps) \(right ? "right" : "left") swipe(s)")
-
-        if steps == 1 {
-            postSwitchGesture(right: right)
-            activateTopmostWindow()
-            return
-        }
-
-        // Multi-step. The flash between gestures is the intermediate space
-        // being rendered — something we can't suppress via CGSDisableUpdate or
-        // CGSHideSpaces (both tried, neither prevents it fully). Instead, cover
-        // the transition with a full-screen heavy blur overlay that sits on
-        // every space. The user sees a deliberate-looking blur wipe rather than
-        // a rendering glitch.
-        aslog("gestureSwitch: multi-step, showing blur overlay")
-        TransitionOverlay.show()
-
-        for _ in 0..<steps { postSwitchGesture(right: right) }
-
-        // Let the gesture events drain (and the Dock land on the target space)
-        // before we pull the overlay down.
-        let deadline = Date().addingTimeInterval(0.100)
-        RunLoop.current.run(until: deadline)
-
-        TransitionOverlay.hide()
-        activateTopmostWindow()
-    }
-
-    /// After a synthetic gesture switch, macOS may not activate a window in
-    /// the destination space. Find the topmost normal-layer window on screen
-    /// and activate its owning application so the menu bar updates and
-    /// focus-dependent apps (like RainbowApple) can re-query correctly.
-    private static func activateTopmostWindow() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            guard let windowList = CGWindowListCopyWindowInfo(
-                [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
-            ) as? [[String: Any]] else { return }
-
-            for window in windowList {
-                guard let layer = window[kCGWindowLayer as String] as? Int, layer == 0,
-                      let pid = window[kCGWindowOwnerPID as String] as? pid_t else { continue }
-                if let app = NSRunningApplication(processIdentifier: pid),
-                   app.activationPolicy == .regular, !app.isHidden {
-                    app.activate()
-                    aslog("activateTopmostWindow: activated \(app.localizedName ?? "?") (pid \(pid))")
-                    return
-                }
-            }
-            aslog("activateTopmostWindow: no suitable window found")
-        }
-    }
-
-    // MARK: - Synthetic gesture posting
-
-    private static let fieldEventSubType       = CGEventField(rawValue: 55)!
-    private static let fieldHIDType            = CGEventField(rawValue: 110)!
-    private static let fieldScrollY            = CGEventField(rawValue: 119)!
-    private static let fieldSwipeMotion        = CGEventField(rawValue: 123)!
-    private static let fieldSwipeProgress      = CGEventField(rawValue: 124)!
-    private static let fieldSwipeVelocityX     = CGEventField(rawValue: 129)!
-    private static let fieldSwipeVelocityY     = CGEventField(rawValue: 130)!
-    private static let fieldGesturePhase       = CGEventField(rawValue: 132)!
-    private static let fieldScrollFlagBits     = CGEventField(rawValue: 135)!
-    private static let fieldZoomDeltaX         = CGEventField(rawValue: 139)!
-
-    private static let kCGSEventGesture:         Int64 = 29
-    private static let kCGSEventDockControl:     Int64 = 30
-    private static let kIOHIDEventTypeDockSwipe: Int64 = 23
-    private static let kGestureMotionHorizontal: Int64 = 1
-    private static let kPhaseBegan:              Int64 = 1
-    private static let kPhaseEnded:              Int64 = 4
-
-
-    /// Posts a complete Begin + End dock-swipe gesture pair that advances the
-    /// visible cycle by one space, at high velocity so the Dock skips its
-    /// sliding animation. The Dock clamps one gesture = one space regardless
-    /// of progress magnitude, so multi-space jumps require posting N of these.
-    /// Post a single phase of a synthetic dock swipe.
-    ///
-    /// Split out of `postSwitchGesture` on 2026-09-15 so macOS 27 can be given an
-    /// intermediate "changed" phase with a gap either side. Every field is
-    /// unchanged from the version that worked up to macOS 26.
-    private static func postPhase(_ phase: Int64, right: Bool, progress: Double, velocity: Double) {
-        let flagDir: Int64 = right ? 1 : 0
-
-        guard let gesture = CGEvent(source: nil),
-              let dock    = CGEvent(source: nil) else { return }
-
-        gesture.type = CGEventType(rawValue: UInt32(kCGSEventGesture))!
-        gesture.setIntegerValueField(fieldEventSubType, value: kCGSEventGesture)
-
-        dock.type = CGEventType(rawValue: UInt32(kCGSEventDockControl))!
-        dock.setIntegerValueField(fieldEventSubType,   value: kCGSEventDockControl)
-        dock.setIntegerValueField(fieldHIDType,        value: kIOHIDEventTypeDockSwipe)
-        dock.setIntegerValueField(fieldGesturePhase,   value: phase)
-        dock.setIntegerValueField(fieldScrollFlagBits, value: flagDir)
-        dock.setIntegerValueField(fieldSwipeMotion,    value: kGestureMotionHorizontal)
-        dock.setDoubleValueField(fieldScrollY,         value: 0)
-        dock.setDoubleValueField(fieldZoomDeltaX,      value: Double(Float.leastNonzeroMagnitude))
-        if progress != 0 { dock.setDoubleValueField(fieldSwipeProgress, value: progress) }
-        if velocity != 0 {
-            dock.setDoubleValueField(fieldSwipeVelocityX, value: velocity)
-            dock.setDoubleValueField(fieldSwipeVelocityY, value: 0)
-        }
-
-        dock.post(tap: .cgSessionEventTap)
-        gesture.post(tap: .cgSessionEventTap)
-    }
-
-    /// Drive one space-worth of dock swipe.
-    ///
-    /// **macOS 26 and earlier:** began then ended, posted back to back. This is
-    /// what shipped for years and it works there.
-    ///
-    /// **macOS 27: this does not work, and cannot be made to.** Measured
-    /// 2026-09-16 on 27.0 (26A428) with two real displays and an Accessibility
-    /// grant: sixteen combinations of intermediate-phase value (2, 3, 8, 4) and
-    /// inter-phase delay (10, 25, 60, 120 ms) all failed to move a space, as did
-    /// the unpaced original as a control. InstantSpaceSwitcher PR #88 reports
-    /// pacing working on this build; it does not reproduce here.
-    ///
-    /// So MouseDragFix's account is the right one: WindowServer rejects
-    /// field-encoded synthetic gestures on 27. Reviving this path means building
-    /// a real IOHIDEvent and attaching it with SkyLight's `SLEventSetIOHIDEvent`.
-    /// Do not spend more time on phase values or timings — that search space is
-    /// exhausted and the negative result is recorded.
-    private static func postSwitchGesture(right: Bool) {
-        let progress: Double = right ?  2.0 : -2.0
-        let velocity: Double = right ? 400.0 : -400.0
-
-        postPhase(kPhaseBegan, right: right, progress: 0, velocity: 0)
-        postPhase(kPhaseEnded, right: right, progress: progress, velocity: velocity)
-    }
-
-    // MARK: - Display count
-
-    private static func isSingleDisplay() -> Bool {
-        NSScreen.screens.count <= 1
     }
 }

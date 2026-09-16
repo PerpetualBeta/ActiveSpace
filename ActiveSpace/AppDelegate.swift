@@ -180,8 +180,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         republishHotkeys()
         setupEventTap()
 
-        VirtualDisplay.startManaging()
-
         // Drift detection → diagnostic log. The launchd keep-alive agent
         // still provides crash-resilience respawn; the monitor just
         // classifies and logs drift events for future debugging.
@@ -238,11 +236,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Tear down the virtual display before exit so a self-restart under
-        // launchd doesn't inherit a lingering 800×600 that would poison the
-        // respawned instance's initial fingerprint.
-        VirtualDisplay.teardown()
-
         // Watchdog-initiated termination needs to exit non-zero so the
         // launchd keep-alive agent (KeepAlive: SuccessfulExit=false)
         // actually respawns us. User-initiated Quit leaves
