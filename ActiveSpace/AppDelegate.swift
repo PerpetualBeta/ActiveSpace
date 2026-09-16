@@ -890,8 +890,9 @@ private struct ActiveSpaceSettingsContent: View {
                     }
                 }
 
-                Divider()
-
+                // No Divider here. In a grouped Form every child gets its own
+                // row container, so a divider renders as an empty slot rather
+                // than a line between the two groups.
                 HStack {
                     Text("Move left a space")
                     Spacer()
