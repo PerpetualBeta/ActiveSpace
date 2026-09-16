@@ -219,6 +219,155 @@ func directSwitchFull(to targetID: Int, from currentID: Int, displayID: String) 
     say("     SLSEnsureSpaceSwitchToActiveProcess → \(rc), SLSSpaceResetMenuBar → \(mrc)")
 }
 
+
+// MARK: - Deferring to macOS instead of faking gestures
+//
+// Jonathan's design, 2026-09-16. macOS already switches spaces perfectly; the
+// only reason ActiveSpace ever synthesised a gesture was to avoid the animation.
+// Two days of measurement later every synthetic route is either dead (gesture)
+// or corrupting (direct CGS bleed-through), while macOS's own path worked
+// flawlessly throughout. So read what the user has bound in Mission Control and
+// send that key, rather than fighting the window server.
+//
+// The bindings live in com.apple.symbolichotkeys under AppleSymbolicHotKeys:
+//   79 / 81 = move left / right a space
+//   118...  = switch to desktop 1, 2, 3 ...
+// Each entry is { enabled: Bool, value: { parameters: [char, keycode, modifiers] } }.
+// The modifier field uses NSEvent flag values, which must be translated to
+// CGEventFlags before posting.
+
+struct Binding {
+    var keyCode: CGKeyCode
+    var flags: CGEventFlags
+    var enabled: Bool
+}
+
+func readBinding(id: Int) -> Binding? {
+    guard let d = UserDefaults(suiteName: "com.apple.symbolichotkeys"),
+          let all = d.dictionary(forKey: "AppleSymbolicHotKeys"),
+          let entry = all[String(id)] as? [String: Any] else { return nil }
+    let enabled = (entry["enabled"] as? Bool) ?? false
+    guard let value = entry["value"] as? [String: Any],
+          let params = value["parameters"] as? [Any], params.count >= 3,
+          let code = (params[1] as? NSNumber)?.intValue,
+          let mods = (params[2] as? NSNumber)?.uint64Value else { return nil }
+
+    // NSEvent flags to CGEventFlags. The function bit (0x800000) is set by the
+    // system for arrow and F keys; post it too, because the symbolic hotkey was
+    // registered with it.
+    var f: CGEventFlags = []
+    if mods & 0x20000  != 0 { f.insert(.maskShift) }
+    if mods & 0x40000  != 0 { f.insert(.maskControl) }
+    if mods & 0x80000  != 0 { f.insert(.maskAlternate) }
+    if mods & 0x100000 != 0 { f.insert(.maskCommand) }
+    // 0x800000 is NSEvent's function-key bit, and it MUST be posted. macOS
+    // registered these hotkeys with it, so without it nothing matches: dropping
+    // it killed the F-key desktop jumps that had just worked three times in a
+    // row. Measured both ways 2026-09-16.
+    if mods & 0x800000 != 0 { f.insert(.maskSecondaryFn) }
+    return Binding(keyCode: CGKeyCode(code), flags: f, enabled: enabled)
+}
+
+func postBinding(_ b: Binding) {
+    guard let down = CGEvent(keyboardEventSource: nil, virtualKey: b.keyCode, keyDown: true),
+          let up   = CGEvent(keyboardEventSource: nil, virtualKey: b.keyCode, keyDown: false) else { return }
+    down.flags = b.flags
+    up.flags = b.flags
+    down.post(tap: .cgSessionEventTap)
+    usleep(20_000)
+    up.post(tap: .cgSessionEventTap)
+}
+
+
+// MARK: - Enabling a Mission Control shortcut on the user's behalf
+//
+// Jonathan's call, 2026-09-16: offering to switch the shortcut on is better UX
+// than sending the user to System Settings and hoping. It writes another app's
+// preference domain, which is why it is prototyped and measured here first.
+//
+// Two cases, and they are not the same:
+//
+//   - The entry EXISTS but is disabled. Flip `enabled` and change nothing else,
+//     so the user keeps whatever key macOS already had for it.
+//   - The entry is ABSENT. One must be invented. Use control+digit, macOS's own
+//     historical binding for "Switch to Desktop N", and report what was chosen
+//     rather than assigning silently.
+//
+// A write is not live until the shortcut system reloads it. `activateSettings -u`
+// is the supported nudge.
+
+let symbolicDomain = "com.apple.symbolichotkeys" as CFString
+let symbolicKey = "AppleSymbolicHotKeys" as CFString
+
+/// Keycodes for the digits 1...9, for the invented fallback binding.
+let digitKeyCodes: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+
+func enableDesktopShortcut(_ n: Int) -> String {
+    let id = 118 + n - 1
+    guard n >= 1, n <= 9 else { return "desktop \(n): out of range for a digit binding" }
+
+    var all = (CFPreferencesCopyValue(symbolicKey, symbolicDomain,
+                                      kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+               as? [String: Any]) ?? [:]
+
+    var note: String
+    if var entry = all[String(id)] as? [String: Any],
+       let value = entry["value"] as? [String: Any],
+       let params = value["parameters"] as? [Any], params.count >= 3 {
+        let wasEnabled = (entry["enabled"] as? Bool) ?? false
+        entry["enabled"] = true
+        all[String(id)] = entry
+        note = wasEnabled ? "desktop \(n): already enabled, rewritten unchanged"
+                          : "desktop \(n): existing binding enabled, key untouched"
+    } else {
+        let code = digitKeyCodes[n - 1]
+        let entry: [String: Any] = [
+            "enabled": true,
+            "value": [
+                "type": "standard",
+                // [character, keyCode, modifiers] — 0x40000 is control.
+                "parameters": [NSNumber(value: 65535), NSNumber(value: Int(code)), NSNumber(value: 0x40000)]
+            ]
+        ]
+        all[String(id)] = entry
+        note = "desktop \(n): no entry existed, created control+\(n)"
+    }
+
+    CFPreferencesSetValue(symbolicKey, all as CFPropertyList, symbolicDomain,
+                          kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    CFPreferencesSynchronize(symbolicDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: "/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings")
+    task.arguments = ["-u"]
+    do { try task.run(); task.waitUntilExit() } catch { note += " (activateSettings failed: \(error))" }
+
+    return note
+}
+
+
+/// Flip an existing Mission Control shortcut on or off, leaving its key alone.
+/// Returns a description of what happened, or nil if there was no entry.
+func setDesktopShortcutEnabled(_ n: Int, _ on: Bool) -> String? {
+    let id = 118 + n - 1
+    guard var all = CFPreferencesCopyValue(symbolicKey, symbolicDomain,
+                                           kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            as? [String: Any],
+          var entry = all[String(id)] as? [String: Any] else { return nil }
+    let was = (entry["enabled"] as? Bool) ?? false
+    entry["enabled"] = on
+    all[String(id)] = entry
+    CFPreferencesSetValue(symbolicKey, all as CFPropertyList, symbolicDomain,
+                          kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    CFPreferencesSynchronize(symbolicDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: "/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings")
+    task.arguments = ["-u"]
+    try? task.run()
+    task.waitUntilExit()
+    return "desktop \(n): \(was ? "on" : "off") -> \(on ? "on" : "off")"
+}
+
 // MARK: - Measurement harness
 
 /// Service the runloop, then re-read. The runloop pump matters: a CLI that
@@ -280,7 +429,7 @@ let changedPhase = Int64(args.count > 2 ? Int(args[2]) ?? 2 : 2)
 say("spaceprobe — macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
 let trusted = AXIsProcessTrusted()
 say("Accessibility trusted: \(trusted ? "YES" : "NO  ← synthetic events will be ignored")")
-if !trusted && (mode == "legacy" || mode == "paced" || mode == "all" || mode == "sweep" || mode == "prompt") {
+if !trusted && (mode == "legacy" || mode == "paced" || mode == "all" || mode == "sweep" || mode == "defer" || mode == "prompt") {
     say("Asking macOS for Accessibility. Approve it, then run this again.")
     AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
     if mode != "prompt" {
@@ -478,6 +627,115 @@ case "sweep":
         say("")
         say("You moved from space \(start.currentIndex) to \(now.currentIndex) — switch back by hand.")
     }
+
+case "defer":
+    guard let start = readSpaces() else { exit(1) }
+    say("Deferring to macOS's own Mission Control shortcuts.")
+    say("Start: space \(start.currentIndex) of \(start.total).")
+    say("")
+    say("Bindings found:")
+    for i in 0..<start.total {
+        if let b = readBinding(id: 118 + i) {
+            say("   Switch to Desktop \(i+1): keyCode \(b.keyCode) flags 0x\(String(b.flags.rawValue, radix: 16)) \(b.enabled ? "enabled" : "DISABLED")")
+        } else {
+            say("   Switch to Desktop \(i+1): no binding")
+        }
+    }
+    for (id, label) in [(79, "Move left a space"), (81, "Move right a space")] {
+        if let b = readBinding(id: id) {
+            say("   \(label): keyCode \(b.keyCode) flags 0x\(String(b.flags.rawValue, radix: 16)) \(b.enabled ? "enabled" : "DISABLED")")
+        } else {
+            say("   \(label): no binding")
+        }
+    }
+    say("")
+
+    let targets = [min(3, start.total), min(6, start.total), start.currentIndex]
+    for tgt in targets {
+        guard let b = readBinding(id: 118 + tgt - 1), b.enabled else {
+            say("  desktop \(tgt): no enabled binding, skipping")
+            continue
+        }
+        attempt("switch to desktop \(tgt) via its Mission Control key") { _ in postBinding(b) }
+        say("")
+    }
+
+    if let b = readBinding(id: 81), b.enabled {
+        attempt("move right a space via its Mission Control key") { _ in postBinding(b) }
+        say("")
+    }
+    if let b = readBinding(id: 79), b.enabled {
+        attempt("move left a space via its Mission Control key") { _ in postBinding(b) }
+        say("")
+    }
+
+    if let now = readSpaces() {
+        say("Finished on space \(now.currentIndex) (started on \(start.currentIndex)).")
+    }
+
+case "assignkey":
+    // Idempotent by design: pointed at an already-enabled desktop it rewrites the
+    // same value, which is how the write path gets tested without changing the
+    // user's setup.
+    let n = args.count > 1 ? (Int(args[1]) ?? 8) : 8
+    say("Before:")
+    if let b = readBinding(id: 118 + n - 1) {
+        say("   desktop \(n): keyCode \(b.keyCode) flags 0x\(String(b.flags.rawValue, radix: 16)) \(b.enabled ? "enabled" : "disabled")")
+    } else {
+        say("   desktop \(n): no entry")
+    }
+    say("")
+    say(enableDesktopShortcut(n))
+    say("")
+    say("After:")
+    if let b = readBinding(id: 118 + n - 1) {
+        say("   desktop \(n): keyCode \(b.keyCode) flags 0x\(String(b.flags.rawValue, radix: 16)) \(b.enabled ? "enabled" : "disabled")")
+    } else {
+        say("   desktop \(n): still no entry — the write did not take")
+    }
+
+case "liveness":
+    // Does flipping the preference actually make the shortcut live? Turn one OFF,
+    // prove the key stops working, turn it back ON, prove it works again. Ends on
+    // the user's original settings either way.
+    // Pick a target that is NOT where we already are. Asking to switch to the
+    // space you are already on does nothing, which reads exactly like a dead
+    // shortcut — the first run of this test made that mistake.
+    guard let here = readSpaces() else { exit(1) }
+    let n = args.count > 1 ? (Int(args[1]) ?? 0) : ((here.currentIndex % here.total) + 1)
+    say("Currently on space \(here.currentIndex); testing with desktop \(n).")
+    guard let b0 = readBinding(id: 118 + n - 1) else {
+        say("desktop \(n) has no binding — nothing to test")
+        exit(1)
+    }
+    let originallyOn = b0.enabled
+    say("Testing whether the preference write goes live, using desktop \(n).")
+    say("It starts \(originallyOn ? "enabled" : "disabled") and will be put back that way.")
+    say("")
+
+    if let msg = setDesktopShortcutEnabled(n, false) { say(msg) }
+    settle(1.0)
+    if let bOff = readBinding(id: 118 + n - 1) {
+        say("   reads back as \(bOff.enabled ? "enabled" : "disabled")")
+        let moved = attempt("posting desktop \(n)'s key while DISABLED (expect no move)") { _ in
+            postBinding(Binding(keyCode: bOff.keyCode, flags: bOff.flags, enabled: false))
+        }
+        say(moved ? "   UNEXPECTED: it moved while disabled" : "   correct: disabled means dead")
+    }
+    say("")
+
+    if let msg = setDesktopShortcutEnabled(n, true) { say(msg) }
+    settle(1.0)
+    if let bOn = readBinding(id: 118 + n - 1) {
+        say("   reads back as \(bOn.enabled ? "enabled" : "disabled")")
+        let moved = attempt("posting desktop \(n)'s key after RE-ENABLING (expect a move)") { _ in
+            postBinding(bOn)
+        }
+        say(moved ? "   the write went live" : "   the write did NOT go live")
+    }
+    say("")
+
+    if let msg = setDesktopShortcutEnabled(n, originallyOn) { say("restored: " + msg) }
 
 default:
     say("usage: spaceprobe [report|windows|legacy|paced|direct|direct-full|all|sweep] [delayMs] [changedPhase]")
