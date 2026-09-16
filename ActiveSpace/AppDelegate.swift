@@ -730,11 +730,42 @@ private struct ActiveSpaceSettingsContent: View {
     }
 
     @State private var spaceShortcuts: [SpaceShortcut] = []
+    @State private var moveLeft: MissionControlShortcuts.Status = .missing
+    @State private var moveRight: MissionControlShortcuts.Status = .missing
 
     private func refreshSpaceShortcuts() {
         delegate.observer.refresh()
         spaceShortcuts = (1...max(1, delegate.observer.totalSpaces)).map {
             SpaceShortcut(index: $0, status: MissionControlShortcuts.status(forDesktop: $0))
+        }
+        moveLeft = MissionControlShortcuts.status(id: MissionControlShortcuts.moveLeftID)
+        moveRight = MissionControlShortcuts.status(id: MissionControlShortcuts.moveRightID)
+    }
+
+    private var anythingMissing: Bool {
+        spaceShortcuts.contains { !$0.isReady }
+            || !isReady(moveLeft) || !isReady(moveRight)
+    }
+
+    private func isReady(_ s: MissionControlShortcuts.Status) -> Bool {
+        if case .enabled = s { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private func shortcutValue(_ status: MissionControlShortcuts.Status) -> some View {
+        switch status {
+        case .enabled(let binding):
+            Text(binding.display)
+                .foregroundStyle(.secondary)
+        case .disabled(let binding):
+            Text("\(binding.display) \u{2014} switched off in Mission Control")
+                .foregroundStyle(.orange)
+                .font(.caption)
+        case .missing:
+            Text("Not bound in Mission Control")
+                .foregroundStyle(.orange)
+                .font(.caption)
         }
     }
 
@@ -784,11 +815,13 @@ private struct ActiveSpaceSettingsContent: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
-                if spaceShortcuts.contains(where: { !$0.isReady }) {
+                if anythingMissing {
                     Button("Set up the missing shortcuts") {
                         for row in spaceShortcuts where !row.isReady {
                             MissionControlShortcuts.enableDesktop(row.index)
                         }
+                        if !isReady(moveLeft) { MissionControlShortcuts.enableMoveLeft() }
+                        if !isReady(moveRight) { MissionControlShortcuts.enableMoveRight() }
                         refreshSpaceShortcuts()
                     }
                     Text("Turns on the Mission Control shortcut for each space below that has none. Where macOS already knows a key, that key is kept; otherwise control plus the space number is used, which is macOS's own default.")
@@ -800,21 +833,25 @@ private struct ActiveSpaceSettingsContent: View {
                     HStack {
                         Text("Space \(row.index)")
                         Spacer()
-                        switch row.status {
-                        case .enabled(let binding):
-                            Text(binding.display)
-                                .foregroundStyle(.secondary)
-                        case .disabled(let binding):
-                            Text("\(binding.display) — switched off in Mission Control")
-                                .foregroundStyle(.orange)
-                                .font(.caption)
-                        case .missing:
-                            Text("Not bound in Mission Control")
-                                .foregroundStyle(.orange)
-                                .font(.caption)
-                        }
+                        shortcutValue(row.status)
                     }
                 }
+
+                Divider()
+
+                HStack {
+                    Text("Move left a space")
+                    Spacer()
+                    shortcutValue(moveLeft)
+                }
+                HStack {
+                    Text("Move right a space")
+                    Spacer()
+                    shortcutValue(moveRight)
+                }
+                Text("These two step one space at a time. ActiveSpace does not send them — it sends the shortcut for the space you picked — but they are listed here because they are how you move by hand.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
 
                 Button("Open Mission Control shortcuts\u{2026}") {
                     MissionControlShortcuts.openKeyboardShortcutSettings()
@@ -906,5 +943,15 @@ private struct ActiveSpaceSettingsContent: View {
             }
         }
         .onAppear { refreshSpaceShortcuts() }
+        // Someone can change these in System Settings while this panel is open,
+        // so re-read whenever it comes back to the front rather than only once.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshSpaceShortcuts()
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSWindow.didBecomeKeyNotification)) { _ in
+            refreshSpaceShortcuts()
+        }
     }
 }

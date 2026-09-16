@@ -58,15 +58,35 @@ enum MissionControlShortcuts {
 
     static func shortcutID(forDesktop n: Int) -> Int { 118 + n - 1 }
 
+    /// "Move left a space" and "Move right a space".
+    ///
+    /// Listed in Settings but never posted by the app: sending them opens
+    /// Mission Control rather than switching, because the function-key bit in
+    /// their stored modifiers reads as the globe key. They are here because the
+    /// user presses them, and a missing one is worth telling them about.
+    static let moveLeftID = 79
+    static let moveRightID = 81
+
     // MARK: - Reading
 
     static func status(forDesktop n: Int) -> Status {
-        guard let b = binding(id: shortcutID(forDesktop: n)) else { return .missing }
+        status(id: shortcutID(forDesktop: n))
+    }
+
+    static func status(id: Int) -> Status {
+        guard let b = binding(id: id) else { return .missing }
         return b.enabled ? .enabled(b) : .disabled(b)
     }
 
     /// Read one shortcut. Returns nil when macOS has no entry for it.
+    ///
+    /// **Synchronises first, every time.** CoreFoundation caches another
+    /// process's preference domain, so without this a long-running app keeps
+    /// reporting whatever it read the first time. Jonathan changed his bindings
+    /// from the F-keys to control+digit while the Settings panel was open and it
+    /// carried on showing F1 to F8.
     static func binding(id: Int) -> Binding? {
+        CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         guard let all = CFPreferencesCopyValue(key, domain,
                                                kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
                 as? [String: Any],
@@ -157,7 +177,39 @@ enum MissionControlShortcuts {
     @discardableResult
     static func enableDesktop(_ n: Int) -> EnableResult {
         guard n >= 1 else { return .failed("desktop \(n) is not a desktop") }
-        let id = shortcutID(forDesktop: n)
+        guard n <= digitKeyCodes.count else {
+            return enable(id: shortcutID(forDesktop: n), inventing: nil)
+        }
+        // macOS's own default for "Switch to Desktop N" is control plus the digit.
+        //
+        // The character matters. macOS stores the ASCII code of whatever the key
+        // produces — control+1 is written as 49, not 65535 — and writing 65535
+        // for a key that does produce a character risks a binding it never
+        // matches. Observed when Jonathan switched his own bindings from the
+        // F-keys (65535, no character) to the digits (49, 50, 51 ...).
+        return enable(id: shortcutID(forDesktop: n),
+                      inventing: (digitKeyCodes[n - 1], 0x40000, 48 + n))
+    }
+
+    /// Turn "Move left a space" on, inventing control+left if macOS has no entry.
+    ///
+    /// Character 65535 means "this key produces no character", which is correct
+    /// for an arrow.
+    @discardableResult
+    static func enableMoveLeft() -> EnableResult {
+        enable(id: moveLeftID, inventing: (123, 0x40000, 65535))
+    }
+
+    /// Turn "Move right a space" on, inventing control+right if macOS has none.
+    @discardableResult
+    static func enableMoveRight() -> EnableResult {
+        enable(id: moveRightID, inventing: (124, 0x40000, 65535))
+    }
+
+    /// `inventing` is the key to create when macOS has no entry at all. Pass nil
+    /// to refuse to invent one, which is right when there is no sensible default.
+    @discardableResult
+    private static func enable(id: Int, inventing fallback: (CGKeyCode, UInt64, Int)?) -> EnableResult {
 
         var all = (CFPreferencesCopyValue(key, domain,
                                           kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
@@ -179,28 +231,30 @@ enum MissionControlShortcuts {
             all[String(id)] = entry
             result = .switchedOn(b)
         } else {
-            guard n <= digitKeyCodes.count else {
-                return .failed("macOS has no default key for desktop \(n)")
+            guard let (code, mods, character) = fallback else {
+                return .failed("macOS has no default key for shortcut \(id)")
             }
-            let code = digitKeyCodes[n - 1]
             all[String(id)] = [
                 "enabled": true,
                 "value": [
                     "type": "standard",
                     // [character, keyCode, modifiers]; 0x40000 is control.
-                    "parameters": [NSNumber(value: 65535),
+                    "parameters": [NSNumber(value: character),
                                    NSNumber(value: Int(code)),
-                                   NSNumber(value: 0x40000)]
+                                   NSNumber(value: Int(mods))]
                 ]
             ] as [String: Any]
-            result = .created(Binding(keyCode: code, flags: [.maskControl], enabled: true, nsModifiers: [.control]))
+            result = .created(Binding(keyCode: code,
+                                      flags: cgFlags(fromNSEventFlags: mods),
+                                      enabled: true,
+                                      nsModifiers: nsModifiers(fromRaw: mods)))
         }
 
         CFPreferencesSetValue(key, all as CFPropertyList, domain,
                               kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         reloadShortcuts()
-        aslog("MissionControlShortcuts.enableDesktop(\(n)) → \(result)")
+        aslog("MissionControlShortcuts.enable(id: \(id)) → \(result)")
         return result
     }
 
