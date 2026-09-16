@@ -492,7 +492,18 @@ enum SpaceSwitcher {
                 aslog("handBackTheMenuBar: space \(index) arrived, no resident window — activated \(first.app.localizedName ?? "?")")
                 return
             }
-            aslog("handBackTheMenuBar: no suitable window found — the bar may stay blank")
+
+            // An empty space has no candidates at all, and something must own
+            // the menu bar or we are back to the bug this exists to fix.
+            // Jonathan's call: hand it to Finder, which is always running and
+            // owns the desktop, and is what macOS itself falls back to.
+            if let finder = NSRunningApplication
+                .runningApplications(withBundleIdentifier: "com.apple.finder").first {
+                finder.activate()
+                aslog("handBackTheMenuBar: space \(index) arrived and is empty — activated Finder")
+                return
+            }
+            aslog("handBackTheMenuBar: space \(index) is empty and Finder is not running — the bar may stay blank")
         }
     }
 
