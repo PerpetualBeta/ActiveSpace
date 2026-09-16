@@ -107,7 +107,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var driftMonitor: DriftMonitor?
 
     private var statusItem: NSStatusItem!
-    private let observer = SpaceObserver()
+    /// Not private: the Settings panel lists one row per space, so it needs the
+    /// count and updates live as spaces are added or removed.
+    let observer = SpaceObserver()
     private var popover: NSPopover?
     private var cancellables = Set<AnyCancellable>()
     let sparkleUserDriverDelegate = ActiveSpaceUserDriverDelegate()
@@ -715,6 +717,27 @@ private struct ActiveSpaceSettingsContent: View {
     let delegate: AppDelegate
     @State private var rowWidth: Int
 
+    /// One row per real space, not per shortcut macOS could theoretically bind.
+    /// Jonathan's call: do not list sixteen desktops at someone who has four.
+    struct SpaceShortcut {
+        let index: Int
+        let status: MissionControlShortcuts.Status
+        /// Ready means the popover can actually reach this space.
+        var isReady: Bool {
+            if case .enabled = status { return true }
+            return false
+        }
+    }
+
+    @State private var spaceShortcuts: [SpaceShortcut] = []
+
+    private func refreshSpaceShortcuts() {
+        delegate.observer.refresh()
+        spaceShortcuts = (1...max(1, delegate.observer.totalSpaces)).map {
+            SpaceShortcut(index: $0, status: MissionControlShortcuts.status(forDesktop: $0))
+        }
+    }
+
     init(delegate: AppDelegate) {
         self.delegate = delegate
         self._rowWidth = State(initialValue: delegate.rowWidth)
@@ -756,35 +779,49 @@ private struct ActiveSpaceSettingsContent: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Keyboard Shortcuts") {
-                JorvikShortcutRecorder(
-                    label: "Previous Space",
-                    keyCode: Binding(
-                        get: { delegate.prevKeyCode },
-                        set: { delegate.prevKeyCode = $0 }
-                    ),
-                    modifiers: Binding(
-                        get: { delegate.prevModifiers },
-                        set: { delegate.prevModifiers = $0 }
-                    ),
-                    displayString: { delegate.prevShortcutDisplayString() },
-                    onChanged: { delegate.saveShortcuts() },
-                    eventTapToDisable: delegate.currentEventTap
-                )
-                JorvikShortcutRecorder(
-                    label: "Next Space",
-                    keyCode: Binding(
-                        get: { delegate.nextKeyCode },
-                        set: { delegate.nextKeyCode = $0 }
-                    ),
-                    modifiers: Binding(
-                        get: { delegate.nextModifiers },
-                        set: { delegate.nextModifiers = $0 }
-                    ),
-                    displayString: { delegate.nextShortcutDisplayString() },
-                    onChanged: { delegate.saveShortcuts() },
-                    eventTapToDisable: delegate.currentEventTap
-                )
+            Section("Switching Spaces") {
+                Text("ActiveSpace switches spaces by sending the keyboard shortcut macOS already has for each one, so macOS does the switching. Spaces without a shortcut cannot be reached from the popover.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                if spaceShortcuts.contains(where: { !$0.isReady }) {
+                    Button("Set up the missing shortcuts") {
+                        for row in spaceShortcuts where !row.isReady {
+                            MissionControlShortcuts.enableDesktop(row.index)
+                        }
+                        refreshSpaceShortcuts()
+                    }
+                    Text("Turns on the Mission Control shortcut for each space below that has none. Where macOS already knows a key, that key is kept; otherwise control plus the space number is used, which is macOS's own default.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(spaceShortcuts, id: \.index) { row in
+                    HStack {
+                        Text("Space \(row.index)")
+                        Spacer()
+                        switch row.status {
+                        case .enabled(let binding):
+                            Text(binding.display)
+                                .foregroundStyle(.secondary)
+                        case .disabled(let binding):
+                            Text("\(binding.display) — switched off in Mission Control")
+                                .foregroundStyle(.orange)
+                                .font(.caption)
+                        case .missing:
+                            Text("Not bound in Mission Control")
+                                .foregroundStyle(.orange)
+                                .font(.caption)
+                        }
+                    }
+                }
+
+                Button("Open Mission Control shortcuts\u{2026}") {
+                    MissionControlShortcuts.openKeyboardShortcutSettings()
+                }
+            }
+
+            Section("ActiveSpace Shortcuts") {
 
                 if rowWidth >= 2 {
                     JorvikShortcutRecorder(
@@ -835,9 +872,6 @@ private struct ActiveSpaceSettingsContent: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
-                Text("To avoid conflicts, disable the matching shortcuts in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
 
             Section("Permissions") {
@@ -871,5 +905,6 @@ private struct ActiveSpaceSettingsContent: View {
                 }
             }
         }
+        .onAppear { refreshSpaceShortcuts() }
     }
 }

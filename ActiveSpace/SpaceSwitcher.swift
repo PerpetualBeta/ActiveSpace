@@ -30,6 +30,15 @@ enum MissionControlShortcuts {
         var keyCode: CGKeyCode
         var flags: CGEventFlags
         var enabled: Bool
+        /// The same modifiers as NSEvent sees them, for display only. The
+        /// function-key bit is deliberately not represented: a user reading
+        /// "F5" does not want to see it spelled as fn+F5.
+        var nsModifiers: NSEvent.ModifierFlags = []
+
+        /// How to write this shortcut in the UI, e.g. "F5" or "⌃1".
+        var display: String {
+            JorvikShortcutPanel.displayString(keyCode: UInt16(keyCode), modifiers: nsModifiers)
+        }
     }
 
     enum Status {
@@ -69,7 +78,8 @@ enum MissionControlShortcuts {
         let enabled = (entry["enabled"] as? Bool) ?? false
         return Binding(keyCode: CGKeyCode(code),
                        flags: cgFlags(fromNSEventFlags: mods),
-                       enabled: enabled)
+                       enabled: enabled,
+                       nsModifiers: nsModifiers(fromRaw: mods))
     }
 
     /// NSEvent modifier flags → CGEventFlags.
@@ -85,6 +95,16 @@ enum MissionControlShortcuts {
         if mods & 0x80000  != 0 { f.insert(.maskAlternate) }
         if mods & 0x100000 != 0 { f.insert(.maskCommand) }
         if mods & 0x800000 != 0 { f.insert(.maskSecondaryFn) }
+        return f
+    }
+
+    /// The subset of the stored modifiers that is worth showing a user.
+    private static func nsModifiers(fromRaw mods: UInt64) -> NSEvent.ModifierFlags {
+        var f: NSEvent.ModifierFlags = []
+        if mods & 0x20000  != 0 { f.insert(.shift) }
+        if mods & 0x40000  != 0 { f.insert(.control) }
+        if mods & 0x80000  != 0 { f.insert(.option) }
+        if mods & 0x100000 != 0 { f.insert(.command) }
         return f
     }
 
@@ -152,7 +172,8 @@ enum MissionControlShortcuts {
             let was = (entry["enabled"] as? Bool) ?? false
             let b = Binding(keyCode: CGKeyCode(code),
                             flags: cgFlags(fromNSEventFlags: mods),
-                            enabled: true)
+                            enabled: true,
+                            nsModifiers: nsModifiers(fromRaw: mods))
             if was { return .alreadyOn(b) }
             entry["enabled"] = true
             all[String(id)] = entry
@@ -172,7 +193,7 @@ enum MissionControlShortcuts {
                                    NSNumber(value: 0x40000)]
                 ]
             ] as [String: Any]
-            result = .created(Binding(keyCode: code, flags: [.maskControl], enabled: true))
+            result = .created(Binding(keyCode: code, flags: [.maskControl], enabled: true, nsModifiers: [.control]))
         }
 
         CFPreferencesSetValue(key, all as CFPropertyList, domain,
