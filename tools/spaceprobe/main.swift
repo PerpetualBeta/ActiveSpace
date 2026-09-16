@@ -368,6 +368,33 @@ func setDesktopShortcutEnabled(_ n: Int, _ on: Bool) -> String? {
     return "desktop \(n): \(was ? "on" : "off") -> \(on ? "on" : "off")"
 }
 
+
+// MARK: - Is the menu bar on screen?
+
+/// True while the menu bar is actually drawn.
+///
+/// Its backing window is only in the on-screen list while the bar is visible.
+/// Matched by layer and geometry: `kCGWindowName` is empty without Screen
+/// Recording permission, and owner names localise ("Control Centre" here).
+func menuBarIsVisible() -> Bool {
+    let menuLayer = Int(CGWindowLevelForKey(.mainMenuWindow))
+    guard let raw = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+            as? [[String: Any]] else { return false }
+    for w in raw {
+        guard let layer = w[kCGWindowLayer as String] as? Int, layer == menuLayer,
+              let b = w[kCGWindowBounds as String] as? [String: Any],
+              let y = b["Y"] as? Double,
+              let width = b["Width"] as? Double else { continue }
+        // Flush with the top of some screen, and at least half of it wide.
+        for screen in NSScreen.screens {
+            let top = NSMaxY(screen.frame)
+            let isTop = abs(y) < 2 || abs(y - (NSMaxY(screen.frame) - top)) < 2
+            if isTop && width >= screen.frame.width / 2 { return true }
+        }
+    }
+    return false
+}
+
 // MARK: - Measurement harness
 
 /// Service the runloop, then re-read. The runloop pump matters: a CLI that
@@ -429,7 +456,7 @@ let changedPhase = Int64(args.count > 2 ? Int(args[2]) ?? 2 : 2)
 say("spaceprobe — macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
 let trusted = AXIsProcessTrusted()
 say("Accessibility trusted: \(trusted ? "YES" : "NO  ← synthetic events will be ignored")")
-if !trusted && (mode == "legacy" || mode == "paced" || mode == "all" || mode == "sweep" || mode == "defer" || mode == "prompt") {
+if !trusted && (mode == "legacy" || mode == "paced" || mode == "all" || mode == "sweep" || mode == "defer" || mode == "menubar" || mode == "prompt") {
     say("Asking macOS for Accessibility. Approve it, then run this again.")
     AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
     if mode != "prompt" {
@@ -736,6 +763,63 @@ case "liveness":
     say("")
 
     if let msg = setDesktopShortcutEnabled(n, originallyOn) { say("restored: " + msg) }
+
+case "menubar":
+    // Switch spaces repeatedly and watch the bar. Reports how often it goes and
+    // for how long, which is what "sometimes" has to become before it is a bug
+    // anyone can fix.
+    let rounds = args.count > 1 ? (Int(args[1]) ?? 10) : 10
+    guard let start = readSpaces() else { exit(1) }
+    say("Watching the menu bar across \(rounds) space changes.")
+    say("Baseline before touching anything: \(menuBarIsVisible() ? "visible" : "NOT VISIBLE")")
+    say("")
+
+    var vanished = 0
+    var durations: [Double] = []
+
+    for round in 1...rounds {
+        guard let s = readSpaces() else { break }
+        let target = (s.currentIndex % s.total) + 1
+        guard case .some(let b) = readBinding(id: 118 + target - 1), b.enabled else {
+            say("  round \(round): desktop \(target) has no enabled binding, skipping")
+            continue
+        }
+        postBinding(b)
+
+        // Sample for three seconds at 50ms.
+        var missingFrom: Double? = nil
+        var missingUntil: Double? = nil
+        var elapsed = 0.0
+        while elapsed < 3.0 {
+            settle(0.05)
+            elapsed += 0.05
+            if menuBarIsVisible() {
+                if missingFrom != nil && missingUntil == nil { missingUntil = elapsed }
+            } else if missingFrom == nil {
+                missingFrom = elapsed
+            }
+        }
+
+        let after = readSpaces()?.currentIndex ?? -1
+        if let from = missingFrom {
+            vanished += 1
+            let until = missingUntil ?? 3.0
+            let dur = until - from
+            durations.append(dur)
+            let ret = missingUntil == nil ? "still gone at 3.0s" : String(format: "back after %.2fs", dur)
+            say(String(format: "  round %d: space %d -> %d, bar GONE from %.2fs, %@", round, s.currentIndex, after, from, ret))
+        } else {
+            say("  round \(round): space \(s.currentIndex) -> \(after), bar stayed up")
+        }
+    }
+
+    say("")
+    say("\(vanished) of \(rounds) space changes lost the menu bar.")
+    if !durations.isEmpty {
+        let avg = durations.reduce(0, +) / Double(durations.count)
+        say(String(format: "Gone for %.2fs on average, worst %.2fs.", avg, durations.max() ?? 0))
+    }
+    say("Finished on space \(readSpaces()?.currentIndex ?? -1), started on \(start.currentIndex).")
 
 default:
     say("usage: spaceprobe [report|windows|legacy|paced|direct|direct-full|all|sweep] [delayMs] [changedPhase]")

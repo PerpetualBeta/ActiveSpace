@@ -41,6 +41,10 @@ private let timestampFormatter: DateFormatter = {
     return f
 }()
 
+/// Whether diagnostic logging is on, for callers that want to skip expensive
+/// work rather than just skip the write.
+var debugLoggingIsOn: Bool { debugLoggingEnabled }
+
 func aslog(_ msg: String) {
     guard debugLoggingEnabled, let logFile else { return }
     let line = "\(timestampFormatter.string(from: Date()))  \(msg)\n"
