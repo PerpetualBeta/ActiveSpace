@@ -6,7 +6,7 @@ A macOS menu-bar app that shows which Mission Control space you are on, and lets
 
 - **Numbered bubble in the menu bar** showing the current space; updates live whether you switch with ActiveSpace, Mission Control, the keyboard or a trackpad gesture.
 - **Click to switch.** With two spaces a left-click toggles between them; with three or more it opens a popover with numbered buttons; with one space the icon is just an indicator.
-- **Optional grid layout.** Tell ActiveSpace your conceptual row width — say, 4 if you keep 8 spaces and think of them as 4×2 — and the popover reflows into rows of that width. Two extra hotkeys, **Space Up** and **Space Down**, navigate up and down a column with wrap (so `Space Down` from the bottom row returns to the top of the same column). Set row width to 0 to keep the original linear strip.
+- **Optional grid layout.** Tell ActiveSpace your conceptual row width — say, 4 if you keep 8 spaces and think of them as 4×2 — and the popover reflows into rows of that width. Two extra hotkeys become available which navigate up/down a row, with optional column-wrap, where navigating down from the bottom of a column lands at the top of the same column and vice versa. Set row width to 0 to keep the original linear strip.
 - **Optional space-aware command-Tab Switcher** (off by default). When on, `command` `tab` shows only apps with windows on the current space, including minimised windows and windows of hidden apps. Cycle with `tab` or arrows, reverse with `shift` `tab`, commit by releasing `command` or pressing `return`, cancel with `esc`. When off, native `command` `tab` is completely untouched.
 - **Follow app across spaces.** Bind a shortcut to make the frontmost app's windows appear on every Mission Control space, the same effect as the Dock's right-click *Options → Assign To → All Desktops*. Toggle the same shortcut again and the app returns to the space it was on when you first followed it.
 - **Focus follows you.** Arriving on a space brings forward an app that actually lives there, rather than leaving you on a desk with nothing selected.
@@ -44,9 +44,9 @@ Right-click the menu-bar bubble and choose **Settings…**:
 
 - **Switching Spaces** — one row per space, showing the Mission Control shortcut macOS has for it or noting that it has none, with a button that sets up the missing ones and another that opens the Mission Control pane if you would rather do it yourself.
 - **Switcher** — toggle the space-aware command-Tab replacement.
-- **Grid** — optional row width for the popover layout and the Space Up / Space Down hotkeys.
-- **Navigation** — **Wrap around at the ends** (on by default). Turn it off for a hard stop, so Space Up on the top row and Space Down on the bottom become no-ops.
-- **ActiveSpace Shortcuts** — Follow App Across Spaces, plus Space Up and Space Down when grid layout is enabled. These are ActiveSpace's own, because macOS has no equivalent.
+- **Grid** — optional row width for the popover layout and the up/down navigation hotkeys.
+- **Navigation** — **Wrap around at the ends** (on by default). Turn it off for a hard stop at the top and bottom of a column.
+- **ActiveSpace Shortcuts** — Follow App Across Spaces, plus the grid's up/down hotkeys. These are ActiveSpace's own, because macOS has no equivalent.
 - **Permissions** — live status of Accessibility and Input Monitoring with grant buttons.
 - **Launch at Login** — start automatically.
 
@@ -55,7 +55,7 @@ Auto-updates are handled by Sparkle. Use the **Check for Updates…** entry in t
 ## Permissions
 
 - **Accessibility** — always required. ActiveSpace switches spaces by sending a keystroke, and macOS only lets a trusted app do that. macOS prompts on first launch.
-- **Input Monitoring** — only required if you use the keyboard. It exists for the shortcut listener, which is created only when the space-aware Switcher is on, or Follow App Across Spaces is bound, or grid layout is on with Space Up or Space Down bound. Turn all of those off and ActiveSpace never asks for it.
+- **Input Monitoring** — only required if you use the keyboard. It exists for the shortcut listener, which is created only when the space-aware Switcher is on, or Follow App Across Spaces is bound, or grid layout is on with an up/down hotkey bound. Turn all of those off and ActiveSpace never asks for it.
 
 ActiveSpace no longer competes with macOS's own Mission Control shortcuts. It uses them, so there is nothing to disable.
 
