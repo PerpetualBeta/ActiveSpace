@@ -558,11 +558,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Activate the app so the popover takes key focus — without this, as an
         // accessory-policy app we don't have focus, so .transient's native Escape
         // and outside-click handling is unreliable.
+        // Logged either side because the menu bar sometimes disappears around
+        // here, and activating an accessory app (which owns no menu bar) is the
+        // likeliest step to disturb it. Measured, not assumed: these three lines
+        // say which step loses the bar.
+        aslog("popover: about to activate, menu bar \(MenuBarWatch.isVisible() ? "visible" : "GONE")")
         NSApp.activate(ignoringOtherApps: true)
+        aslog("popover: activated, menu bar \(MenuBarWatch.isVisible() ? "visible" : "GONE")")
         p.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         p.contentViewController?.view.window?.makeKey()
+        aslog("popover: shown, menu bar \(MenuBarWatch.isVisible() ? "visible" : "GONE")")
         popover = p
 
+        // Observe THIS popover only, and drop the registration when it closes.
+        // The previous version added an observer per popover and never removed
+        // one, so handlePopoverClosed ran once per popover ever opened — visible
+        // in the log as the same close reported three and four times over.
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handlePopoverClosed),
@@ -571,7 +582,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    @objc private func handlePopoverClosed() {
+    @objc private func handlePopoverClosed(_ note: Notification) {
+        aslog("popover: closed, menu bar \(MenuBarWatch.isVisible() ? "visible" : "GONE")")
+        if let closed = note.object {
+            NotificationCenter.default.removeObserver(self,
+                                                      name: NSPopover.didCloseNotification,
+                                                      object: closed)
+        }
         popover = nil
     }
 

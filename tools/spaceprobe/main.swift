@@ -456,7 +456,7 @@ let changedPhase = Int64(args.count > 2 ? Int(args[2]) ?? 2 : 2)
 say("spaceprobe — macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
 let trusted = AXIsProcessTrusted()
 say("Accessibility trusted: \(trusted ? "YES" : "NO  ← synthetic events will be ignored")")
-if !trusted && (mode == "legacy" || mode == "paced" || mode == "all" || mode == "sweep" || mode == "defer" || mode == "menubar" || mode == "prompt") {
+if !trusted && (mode == "legacy" || mode == "paced" || mode == "all" || mode == "sweep" || mode == "defer" || mode == "menubar" || mode == "activation" || mode == "prompt") {
     say("Asking macOS for Accessibility. Approve it, then run this again.")
     AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
     if mode != "prompt" {
@@ -763,6 +763,105 @@ case "liveness":
     say("")
 
     if let msg = setDesktopShortcutEnabled(n, originallyOn) { say("restored: " + msg) }
+
+case "activation":
+    guard let s0 = readSpaces() else { exit(1) }
+    say("Does activating an accessory app lose the menu bar when a space changes?")
+    say("This app is LSUIElement, same as ActiveSpace, so it owns no menu bar either.")
+    say("")
+
+    func watchBar(_ label: String, seconds: Double = 5.0, action: () -> Void) {
+        let before = menuBarIsVisible()
+        say("  \(label):")
+        say("     bar before: \(before ? "visible" : "GONE")")
+        action()
+        var elapsed = 0.0
+        var goneAt: Double? = nil
+        var backAt: Double? = nil
+        while elapsed < seconds {
+            settle(0.1)
+            elapsed += 0.1
+            let v = menuBarIsVisible()
+            if !v && goneAt == nil { goneAt = elapsed }
+            if v, goneAt != nil, backAt == nil { backAt = elapsed }
+        }
+        if let g = goneAt {
+            let b = backAt.map { String(format: "back after %.1fs", $0 - g) } ?? "STILL GONE"
+            say(String(format: "     bar GONE at %.1fs, %@", g, b))
+        } else {
+            say("     bar stayed up")
+        }
+        say("     now on space \(readSpaces()?.currentIndex ?? -1)")
+    }
+
+    // A. the control: just the keystroke.
+    if let s = readSpaces() {
+        let target = (s.currentIndex % s.total) + 1
+        if let b = readBinding(id: 118 + target - 1), b.enabled {
+            watchBar("A. keystroke only, no activation") { postBinding(b) }
+        }
+    }
+    say("")
+
+    // B. the popover's sequence: activate, pause as a human would, then switch.
+    if let s = readSpaces() {
+        let target = (s.currentIndex % s.total) + 1
+        if let b = readBinding(id: 118 + target - 1), b.enabled {
+            watchBar("B. activate this accessory app, then the same keystroke") {
+                NSApp.activate(ignoringOtherApps: true)
+                usleep(800_000)
+                postBinding(b)
+            }
+        }
+    }
+    say("")
+    say("If B lost the bar and A did not, activation is the cause.")
+    say("Started on space \(s0.currentIndex), finished on \(readSpaces()?.currentIndex ?? -1).")
+
+case "watch":
+    // Sample continuously and report every transition. Posts nothing and
+    // switches nothing: whatever happens is the machine's own doing.
+    let seconds = args.count > 1 ? (Double(args[1]) ?? 300) : 300
+    say("Watching the menu bar for \(Int(seconds))s. Nothing is being posted or switched.")
+    say("Switch spaces however you normally would, including by hand.")
+    var wasVisible = menuBarIsVisible()
+    var lastSpace = readSpaces()?.currentIndex ?? -1
+    say("  start: bar \(wasVisible ? "visible" : "GONE"), space \(lastSpace)")
+    var elapsed = 0.0
+    var events = 0
+    var goneSince: Double? = nil
+    while elapsed < seconds {
+        settle(0.1)
+        elapsed += 0.1
+        let nowVisible = menuBarIsVisible()
+        let nowSpace = readSpaces()?.currentIndex ?? -1
+
+        if nowSpace != lastSpace {
+            say(String(format: "  %6.1fs  space %d -> %d%@", elapsed, lastSpace, nowSpace,
+                       nowVisible ? "" : "   (bar is GONE at this moment)"))
+            lastSpace = nowSpace
+        }
+        if nowVisible != wasVisible {
+            events += 1
+            if nowVisible, let since = goneSince {
+                say(String(format: "  %6.1fs  bar BACK after %.1fs, on space %d", elapsed, elapsed - since, nowSpace))
+                goneSince = nil
+            } else {
+                say(String(format: "  %6.1fs  bar GONE, on space %d", elapsed, nowSpace))
+                goneSince = elapsed
+            }
+            wasVisible = nowVisible
+        }
+    }
+    say("")
+    say("\(events) visibility change(s) in \(Int(seconds))s.")
+    say(events == 0 ? "The bar never moved. Either it did not happen, or the detector missed it."
+                    : "Compare the timestamps against ActiveSpace's log: if the bar went while that log shows no switchTo line, the app did not do it.")
+
+case "bar":
+    // Just report what the detector sees, so it can be checked against a human
+    // looking at the screen. Its negative case had never been verified.
+    say("menu bar: \(menuBarIsVisible() ? "VISIBLE" : "NOT VISIBLE")")
 
 case "menubar":
     // Switch spaces repeatedly and watch the bar. Reports how often it goes and
