@@ -450,15 +450,47 @@ enum SpaceSwitcher {
                 [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
             ) as? [[String: Any]] else { return }
 
+            // Candidates in front-to-back order: ordinary app windows only.
+            var candidates: [(app: NSRunningApplication, windowID: UInt32)] = []
             for window in windowList {
                 guard let layer = window[kCGWindowLayer as String] as? Int, layer == 0,
-                      let pid = window[kCGWindowOwnerPID as String] as? pid_t else { continue }
+                      let pid = window[kCGWindowOwnerPID as String] as? pid_t,
+                      let wid = window[kCGWindowNumber as String] as? UInt32 else { continue }
                 if let app = NSRunningApplication(processIdentifier: pid),
                    app.activationPolicy == .regular, !app.isHidden {
-                    app.activate()
-                    aslog("handBackTheMenuBar: space \(index) arrived, activated \(app.localizedName ?? "?") (pid \(pid))")
+                    candidates.append((app, wid))
+                }
+            }
+
+            // Prefer a window that BELONGS to this space.
+            //
+            // Jonathan's rule: landing on a space should focus something that
+            // lives there. The topmost window is often one assigned to all
+            // desktops — his Safari and Ghostty are — and those are on every
+            // space, so focusing one says nothing about where you just arrived.
+            //
+            // A resident window reports exactly one space; a window assigned to
+            // all desktops reports many. Same call the Command-Tab switcher uses
+            // for per-window space membership.
+            let conn = CGSMainConnectionID()
+            let here = currentManagedSpaceID()
+            for candidate in candidates {
+                let spaces = SLSCopySpacesForWindows(conn, 0x7,
+                                                     [NSNumber(value: candidate.windowID)] as CFArray)
+                    .map { $0.uint64Value }
+                if spaces.count == 1, spaces.first == here {
+                    candidate.app.activate()
+                    aslog("handBackTheMenuBar: space \(index) arrived, activated \(candidate.app.localizedName ?? "?") — it lives on this space")
                     return
                 }
+            }
+
+            // Nothing resident: fall back to the topmost of anything, which at
+            // least gives the menu bar an owner.
+            if let first = candidates.first {
+                first.app.activate()
+                aslog("handBackTheMenuBar: space \(index) arrived, no resident window — activated \(first.app.localizedName ?? "?")")
+                return
             }
             aslog("handBackTheMenuBar: no suitable window found — the bar may stay blank")
         }
