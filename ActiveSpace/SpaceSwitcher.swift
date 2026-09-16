@@ -397,11 +397,21 @@ enum SpaceSwitcher {
     /// is then the active app, and being an accessory it owns no menu bar, so on
     /// arrival there is nothing to draw one.
     ///
-    /// Measured 2026-09-16: the bar went for three seconds on every popover jump
-    /// to space 1 and on no other. Space 1 is the case that exposes it because
-    /// every window there is assigned to all desktops, so nothing ARRIVES when
-    /// you land and macOS has no new window to focus. Anywhere else it focuses
-    /// an ordinary window and the bar returns by itself.
+    /// Measured 2026-09-16, all four combinations:
+    ///
+    ///   - keystroke only, any target, 10 switches   bar never went
+    ///   - keystroke only, space 1, 6 switches       bar never went
+    ///   - popover to 6 and to 8                     bar never went
+    ///   - popover to space 1, 3 times               bar went every time, 3.2s+
+    ///
+    /// **Why space 1 specifically is NOT explained.** The obvious theory was that
+    /// every window there is assigned to all desktops, so nothing arrives when
+    /// you land and macOS has no new window to focus — but Jonathan corrected it:
+    /// Music lives on space 1 and only there, so something does arrive. The
+    /// theory is dead and the question is open. What is measured is that the bar
+    /// only goes when the popover has made us active, which is what this
+    /// addresses; the log line below records what it hands the bar to, which is
+    /// the evidence needed to finish the explanation.
     ///
     /// Only runs when we are the active app, so a keyboard switch never steals
     /// the user's focus from whatever they were using.
