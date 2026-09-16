@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var followModifiers: NSEvent.ModifierFlags = [] { didSet { _followModifiers = followModifiers.cgEventFlags } }
 
     /// Conceptual grid row width. 0 = linear (default), ≥2 = grid mode active.
-    /// Drives the popover layout and gates the Space Up / Space Down hotkeys.
+    /// Drives the popover layout and gates the Navigate Up / Navigate Down hotkeys.
     var rowWidth: Int = 0 { didSet { _rowWidth = rowWidth; updateEventTap() } }
 
     /// When true (default), Next/Previous (and grid Up/Down) wrap around at the
@@ -316,8 +316,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// The tap is the only reason this app asks for Input Monitoring, so the
     /// honest thing is to want it only when a feature uses it. Since the macOS
-    /// 27 rework that means: the space-aware Command-Tab, the grid's Space Up
-    /// and Space Down, or Follow App Across Spaces. Previous and Next Space used
+    /// 27 rework that means: the space-aware Command-Tab, the grid's Navigate Up
+    /// and Navigate Down, or Follow App Across Spaces. Previous and Next Space used
     /// to be here too; they are macOS's own shortcuts now.
     private var needsEventTap: Bool {
         if switcherEnabled { return true }
@@ -496,13 +496,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                         activeContext: .anywhere))
         }
         if upKeyCode != 0 {
-            hotkeys.append(JorvikHotkey(actionTitle: "Space Up",
+            hotkeys.append(JorvikHotkey(actionTitle: "Navigate Up",
                                         keyCode: upKeyCode,
                                         modifiers: upModifiers,
                                         activeContext: .anywhere))
         }
         if downKeyCode != 0 {
-            hotkeys.append(JorvikHotkey(actionTitle: "Space Down",
+            hotkeys.append(JorvikHotkey(actionTitle: "Navigate Down",
                                         keyCode: downKeyCode,
                                         modifiers: downModifiers,
                                         activeContext: .anywhere))
@@ -756,7 +756,7 @@ private extension View {
 
 /// All ActiveSpace-specific Settings sections, hosted as a single SwiftUI
 /// view so that `@State rowWidth` drives both the Stepper's label *and* the
-/// conditional disclosure of the Space Up / Space Down shortcut recorders.
+/// conditional disclosure of the Navigate Up / Navigate Down shortcut recorders.
 /// AppDelegate is not @ObservableObject, so without consolidating the
 /// settings UI here, the closure passed to `JorvikSettingsView` would have
 /// no way to react to changes.
@@ -848,7 +848,7 @@ private struct ActiveSpaceSettingsContent: View {
                     delegate.rowWidth = newValue
                     delegate.saveRowWidth()
                 }
-                Text("Lay out the popover as a grid of this width and enable Space Up / Space Down keyboard shortcuts. Set to 0 for the original linear strip.")
+                Text("Lay out the popover as a grid of this width and enable the Navigate Up and Navigate Down keyboard shortcuts. Set to 0 for the original linear strip.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -915,7 +915,7 @@ private struct ActiveSpaceSettingsContent: View {
 
                 if rowWidth >= 2 {
                     JorvikShortcutRecorder(
-                        label: "Space Up",
+                        label: "Navigate Up",
                         keyCode: Binding(
                             get: { delegate.upKeyCode },
                             set: { delegate.upKeyCode = $0 }
@@ -929,7 +929,7 @@ private struct ActiveSpaceSettingsContent: View {
                         eventTapToDisable: delegate.currentEventTap
                     )
                     JorvikShortcutRecorder(
-                        label: "Space Down",
+                        label: "Navigate Down",
                         keyCode: Binding(
                             get: { delegate.downKeyCode },
                             set: { delegate.downKeyCode = $0 }

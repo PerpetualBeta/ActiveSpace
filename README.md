@@ -19,7 +19,7 @@ That means one mechanism on every display configuration, no private window-serve
 
 The shortcuts live in **System Settings → Keyboard → Keyboard Shortcuts → Mission Control**, as *Switch to Desktop 1*, *Switch to Desktop 2* and so on. They are switched off by default on a new Mac. ActiveSpace's Settings pane lists one row per space showing the key macOS has for it, or telling you plainly that it has none, and a single button turns on every missing one for you. Where macOS already knows a key, that key is kept; where it has none, `control` plus the space number is used, which is macOS's own default.
 
-If a space has no shortcut, the popover cannot reach it. ActiveSpace says so rather than failing quietly.
+If a space has no shortcut, the popover cannot reach it. The Settings pane shows which spaces are in that state so you can fix them; the popover itself gives no warning at the point of clicking.
 
 Earlier versions did switch spaces themselves, using synthetic trackpad gestures and private CoreGraphics calls, with an invisible virtual display to make that work on a single-monitor Mac. macOS 27 ended all of it, and deferring to macOS turned out to be simpler, more robust and about a thousand lines lighter.
 
@@ -42,11 +42,11 @@ Launch ActiveSpace from `/Applications` and grant Accessibility when prompted.
 
 Right-click the menu-bar bubble and choose **Settings…**:
 
-- **Switching Spaces** — one row per space, showing the Mission Control shortcut macOS has for it or noting that it has none, with a button that sets up the missing ones and another that opens the Mission Control pane if you would rather do it yourself.
 - **Switcher** — toggle the space-aware command-Tab replacement.
 - **Grid** — optional row width for the popover layout and the up/down navigation hotkeys.
 - **Navigation** — **Wrap around at the ends** (on by default). Turn it off for a hard stop at the top and bottom of a column.
-- **ActiveSpace Shortcuts** — Follow App Across Spaces, plus the grid's up/down hotkeys. These are ActiveSpace's own, because macOS has no equivalent.
+- **Switching Spaces** — one row per space, showing the Mission Control shortcut macOS has for it or noting that it has none, with a button that sets up the missing ones and another that opens the Mission Control pane if you would rather do it yourself.
+- **ActiveSpace Shortcuts** — Follow App Across Spaces, plus **Navigate Up** and **Navigate Down** when grid layout is on. These are ActiveSpace's own, because macOS has no equivalent.
 - **Permissions** — live status of Accessibility and Input Monitoring with grant buttons.
 - **Launch at Login** — start automatically.
 
@@ -87,7 +87,7 @@ ActiveSpace no longer competes with macOS's own Mission Control shortcuts. It us
 ```bash
 git clone https://github.com/PerpetualBeta/ActiveSpace.git
 open ActiveSpace/ActiveSpace.xcodeproj
-# Cmd-B to build, Cmd-R to run
+# command B to build, command R to run
 ```
 
 Or from the command line:
