@@ -271,24 +271,6 @@ enum SpaceSwitcher {
     private static let kPhaseBegan:              Int64 = 1
     private static let kPhaseEnded:              Int64 = 4
 
-    /// The "changed" phase, only posted on macOS 27+. **The value 2 is inferred**
-    /// from Began=1 / Ended=4 reading as a bitmask, not observed, so it is a knob:
-    ///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.gestureChangedPhase -int 2
-    private static var kPhaseChanged: Int64 {
-        let v = UserDefaults.standard.integer(forKey: "ActiveSpace.gestureChangedPhase")
-        return v > 0 ? Int64(v) : 2
-    }
-
-    /// Milliseconds between gesture phases on macOS 27+. Zero on earlier systems.
-    ///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.gesturePhaseDelayMs -int 10
-    private static var gesturePhaseDelayMs: UInt32 {
-        let v = UserDefaults.standard.integer(forKey: "ActiveSpace.gesturePhaseDelayMs")
-        return v > 0 ? UInt32(v) : 10
-    }
-
-    private static var needsPacedGesture: Bool {
-        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
-    }
 
     /// Posts a complete Begin + End dock-swipe gesture pair that advances the
     /// visible cycle by one space, at high velocity so the Dock skips its
@@ -331,33 +313,23 @@ enum SpaceSwitcher {
     /// **macOS 26 and earlier:** began then ended, posted back to back. This is
     /// what shipped for years and it works there.
     ///
-    /// **macOS 27:** the same two events are ignored. The Dock appears to need a
-    /// few milliseconds to register each phase, and an intermediate "changed"
-    /// phase between them — the finding is InstantSpaceSwitcher's (PR #88), which
-    /// reports it working on this exact build, 26A428.
+    /// **macOS 27: this does not work, and cannot be made to.** Measured
+    /// 2026-09-16 on 27.0 (26A428) with two real displays and an Accessibility
+    /// grant: sixteen combinations of intermediate-phase value (2, 3, 8, 4) and
+    /// inter-phase delay (10, 25, 60, 120 ms) all failed to move a space, as did
+    /// the unpaced original as a control. InstantSpaceSwitcher PR #88 reports
+    /// pacing working on this build; it does not reproduce here.
     ///
-    /// **NOT YET VERIFIED HERE.** The probe that measured everything else refuses
-    /// to test gesture modes without an Accessibility grant, because a permission
-    /// refusal is indistinguishable from a dead mechanism and would have recorded
-    /// a false negative. It only matters on a real multi-display setup: with the
-    /// virtual display retired, a single-monitor Mac never reaches this code.
-    /// A competing account (MouseDragFix) holds that macOS 27 rejects
-    /// field-encoded gestures outright and that a real IOHIDEvent attached via
-    /// `SLEventSetIOHIDEvent` is required. If pacing turns out not to be enough,
-    /// that is the next thing to try, not more tuning of these numbers.
+    /// So MouseDragFix's account is the right one: WindowServer rejects
+    /// field-encoded synthetic gestures on 27. Reviving this path means building
+    /// a real IOHIDEvent and attaching it with SkyLight's `SLEventSetIOHIDEvent`.
+    /// Do not spend more time on phase values or timings — that search space is
+    /// exhausted and the negative result is recorded.
     private static func postSwitchGesture(right: Bool) {
         let progress: Double = right ?  2.0 : -2.0
         let velocity: Double = right ? 400.0 : -400.0
 
         postPhase(kPhaseBegan, right: right, progress: 0, velocity: 0)
-
-        if needsPacedGesture {
-            let gap = gesturePhaseDelayMs * 1000
-            usleep(gap)
-            postPhase(kPhaseChanged, right: right, progress: progress / 2, velocity: 0)
-            usleep(gap)
-        }
-
         postPhase(kPhaseEnded, right: right, progress: progress, velocity: velocity)
     }
 

@@ -12,6 +12,28 @@
 import AppKit
 import ApplicationServices
 
+// MARK: - Output
+//
+// Everything printed is also appended to ~/Library/Logs/spaceprobe.log. A bare
+// CLI cannot reliably hold an Accessibility grant, because macOS attributes the
+// permission to the responsible parent process. Wrapped in an .app bundle and
+// launched with `open` it gets its own identity and the grant sticks — but then
+// stdout goes nowhere, so the log is the only way to read the result.
+
+let logURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/Logs/spaceprobe.log")
+
+func say(_ s: String = "") {
+    print(s)
+    if let data = (s + "\n").data(using: .utf8) {
+        if let h = try? FileHandle(forWritingTo: logURL) {
+            h.seekToEndOfFile(); h.write(data); try? h.close()
+        } else {
+            try? data.write(to: logURL)
+        }
+    }
+}
+
 // MARK: - Private API (copied verbatim from ActiveSpace/CGSPrivate.swift)
 
 typealias CGSConnectionID = UInt32
@@ -194,7 +216,7 @@ func directSwitchFull(to targetID: Int, from currentID: Int, displayID: String) 
     CGSManagedDisplaySetCurrentSpace(conn, displayID as CFString, UInt64(targetID))
     let rc = SLSEnsureSpaceSwitchToActiveProcess(conn)
     let mrc = SLSSpaceResetMenuBar(conn, UInt64(targetID))
-    print("     SLSEnsureSpaceSwitchToActiveProcess → \(rc), SLSSpaceResetMenuBar → \(mrc)")
+    say("     SLSEnsureSpaceSwitchToActiveProcess → \(rc), SLSSpaceResetMenuBar → \(mrc)")
 }
 
 // MARK: - Measurement harness
@@ -209,23 +231,40 @@ func settle(_ seconds: Double) {
 func attempt(_ name: String, _ body: (Snapshot) -> Void) -> Bool {
     guard let before = readSpaces() else { print("  \(name): cannot read spaces"); return false }
     let winBefore = onScreenWindows()
-    print("  \(name):")
-    print("     before  space \(before.currentIndex) of \(before.total)  (id \(before.currentID)), \(winBefore.count) windows on screen")
+    say("  \(name):")
+    say("     before  space \(before.currentIndex) of \(before.total)  (id \(before.currentID)), \(winBefore.count) windows on screen")
     body(before)
     settle(1.0)
     guard let after = readSpaces() else { print("     after   cannot read spaces"); return false }
     let winAfter = onScreenWindows()
     let moved = after.currentID != before.currentID
-    let windowsFollowed = Set(winBefore) != Set(winAfter)
-    print("     after   space \(after.currentIndex) of \(after.total)  (id \(after.currentID)), \(winAfter.count) windows on screen")
-    if moved && !windowsFollowed {
-        print("     RESULT  counter moved but the SAME windows are on screen ✗ — windows did not follow")
-    } else if moved {
-        print("     RESULT  MOVED ✓ — and the on-screen windows changed, so the desktop followed")
+
+    // Distinguish a clean switch from bleed-through, which the earlier version of
+    // this check could not do. "The window set changed" is satisfied by BOTH a
+    // real switch and by windows from the old space staying while new ones
+    // arrive — and that second case is precisely the bug the virtual display was
+    // built to prevent (commit 009f653: CGSManagedDisplaySetCurrentSpace "only
+    // composites windows from the target space ... causing windows to bleed
+    // across spaces"). So count departures, not just difference.
+    let b = Set(winBefore), a = Set(winAfter)
+    let left = b.subtracting(a).count       // windows that went away: proof the old space left
+    let arrived = a.subtracting(b).count    // windows that appeared: proof the new space came
+    let stayed = b.intersection(a).count
+
+    say("     after   space \(after.currentIndex) of \(after.total)  (id \(after.currentID)), \(winAfter.count) windows on screen")
+    say("     windows \(left) left, \(arrived) arrived, \(stayed) stayed")
+
+    let clean = moved && left > 0 && arrived > 0
+    if !moved {
+        say("     RESULT  did not move ✗")
+    } else if left == 0 && arrived > 0 {
+        say("     RESULT  BLEED-THROUGH ✗ — every old window is still on screen and new ones joined")
+    } else if left == 0 {
+        say("     RESULT  counter moved, nothing on screen changed ✗ — windows did not follow")
     } else {
-        print("     RESULT  did not move ✗")
+        say("     RESULT  CLEAN SWITCH ✓ — the old space left and the new one arrived")
     }
-    return moved && windowsFollowed
+    return clean
 }
 
 /// Which way can we move from here without falling off the end?
@@ -238,31 +277,31 @@ let mode = args.first ?? "report"
 let delayMs = UInt32(args.count > 1 ? Int(args[1]) ?? 10 : 10)
 let changedPhase = Int64(args.count > 2 ? Int(args[2]) ?? 2 : 2)
 
-print("spaceprobe — macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+say("spaceprobe — macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
 let trusted = AXIsProcessTrusted()
-print("Accessibility trusted: \(trusted ? "YES" : "NO  ← synthetic events will be ignored")")
-if !trusted && (mode == "legacy" || mode == "paced" || mode == "all" || mode == "prompt") {
-    print("Asking macOS for Accessibility. Approve it, then run this again.")
+say("Accessibility trusted: \(trusted ? "YES" : "NO  ← synthetic events will be ignored")")
+if !trusted && (mode == "legacy" || mode == "paced" || mode == "all" || mode == "sweep" || mode == "prompt") {
+    say("Asking macOS for Accessibility. Approve it, then run this again.")
     AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
     if mode != "prompt" {
-        print("Not running the gesture tests without permission — a refusal would look")
-        print("exactly like the mechanism being dead, and that would be a false result.")
+        say("Not running the gesture tests without permission — a refusal would look")
+        say("exactly like the mechanism being dead, and that would be a false result.")
         exit(2)
     }
     exit(0)
 }
-print("NSScreen.screens.count: \(NSScreen.screens.count)")
+say("NSScreen.screens.count: \(NSScreen.screens.count)")
 if let s = readSpaces() {
-    print("Display \"\(s.displayID)\": on space \(s.currentIndex) of \(s.total), ids \(s.spaceIDs)")
+    say("Display \"\(s.displayID)\": on space \(s.currentIndex) of \(s.total), ids \(s.spaceIDs)")
 } else {
-    print("Could not read spaces")
+    say("Could not read spaces")
     exit(1)
 }
-print("")
+say("")
 
 switch mode {
 case "report", "windows":
-    print("On-screen windows (CGWindowList reports the CURRENT space only):")
+    say("On-screen windows (CGWindowList reports the CURRENT space only):")
     if let raw = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
         for w in raw {
             let layer = w[kCGWindowLayer as String] as? Int ?? -1
@@ -275,11 +314,11 @@ case "report", "windows":
                let ww = b["Width"] as? Double, let hh = b["Height"] as? Double {
                 box = "\(Int(x)),\(Int(y)) \(Int(ww))x\(Int(hh))"
             }
-            print("   \(owner.padding(toLength: 22, withPad: " ", startingAt: 0)) \(box.padding(toLength: 20, withPad: " ", startingAt: 0)) \(name.prefix(40))")
+            say("   \(owner.padding(toLength: 22, withPad: " ", startingAt: 0)) \(box.padding(toLength: 20, withPad: " ", startingAt: 0)) \(name.prefix(40))")
         }
     }
-    print("")
-    print("Read-only. Nothing posted.")
+    say("")
+    say("Read-only. Nothing posted.")
 
 case "legacy":
     guard let s = readSpaces() else { exit(1) }
@@ -294,8 +333,10 @@ case "paced":
     }
 
 case "direct":
-    print("WARNING: this mode moves the counter without moving windows and can")
-    print("leave the desk unusable until a real switch. Measured dead 2026-09-15.")
+    say("NOTE: measured 2026-09-15 as counter-moves-but-windows-do-not on the")
+    say("built-in display plus our OWN virtual display. Two REAL displays are a")
+    say("different configuration and are the point of running this. If it fails,")
+    say("recover with control+arrow or a trackpad swipe.")
     guard let s = readSpaces() else { exit(1) }
     let target = direction(s) ? s.spaceIDs[s.currentIndex] : s.spaceIDs[s.currentIndex - 2]
     let startID = s.currentID
@@ -304,11 +345,11 @@ case "direct":
     }
     // Always put the desk back: this runs on a machine in active use.
     if let now = readSpaces(), now.currentID != startID {
-        print("     restoring space \(s.currentIndex)...")
+        say("     restoring space \(s.currentIndex)...")
         directSwitch(to: startID, from: now.currentID, displayID: now.displayID)
         settle(1.0)
         if let back = readSpaces() {
-            print("     back on space \(back.currentIndex)\(back.currentID == startID ? "" : "  ← RESTORE FAILED")")
+            say("     back on space \(back.currentIndex)\(back.currentID == startID ? "" : "  ← RESTORE FAILED")")
         }
     }
 
@@ -319,9 +360,9 @@ case "all":
     // leaves the desk unusable until a real switch resyncs WindowServer. It cost
     // Jonathan a wedged session once; it does not get to do that twice.
     let start = readSpaces()!
-    print("Starting on space \(start.currentIndex) of \(start.total).")
-    print("Each test moves one space. Whichever mechanism works is used to move back.")
-    print("")
+    say("Starting on space \(start.currentIndex) of \(start.total).")
+    say("Each test moves one space. Whichever mechanism works is used to move back.")
+    say("")
 
     var results: [(String, Bool)] = []
     var lastWorking: ((Bool) -> Void)? = nil
@@ -333,7 +374,7 @@ case "all":
         results.append(("legacy", ok))
         if ok { lastWorking = { r in legacySwipe(right: r) } }
     }
-    print("")
+    say("")
 
     if let s = readSpaces() {
         let ok = attempt("2. paced — began→changed→ended, \(delayMs)ms apart, changed=\(changedPhase)") { _ in
@@ -342,12 +383,12 @@ case "all":
         results.append(("paced", ok))
         if ok { lastWorking = { r in pacedSwipe(right: r, delayMs: delayMs, changedPhase: changedPhase) } }
     }
-    print("")
+    say("")
 
     // Walk back with a mechanism that genuinely moves windows, one space at a time.
     if let now = readSpaces(), now.currentIndex != start.currentIndex {
         if let move = lastWorking {
-            print("Walking back to space \(start.currentIndex)...")
+            say("Walking back to space \(start.currentIndex)...")
             var guard_ = 0
             while let cur = readSpaces(), cur.currentIndex != start.currentIndex, guard_ < 12 {
                 move(cur.currentIndex < start.currentIndex)
@@ -355,22 +396,23 @@ case "all":
                 guard_ += 1
             }
             if let back = readSpaces() {
-                print("  now on space \(back.currentIndex)\(back.currentIndex == start.currentIndex ? "" : "  ← switch back by hand")")
+                say("  now on space \(back.currentIndex)\(back.currentIndex == start.currentIndex ? "" : "  ← switch back by hand")")
             }
         } else {
-            print("Moved but nothing worked to move back — switch back by hand (F3).")
+            say("Moved but nothing worked to move back — switch back by hand (F3).")
         }
     }
 
-    print("")
-    print("SUMMARY")
+    say("")
+    say("SUMMARY")
     for (name, ok) in results {
-        print("  \(name.padding(toLength: 8, withPad: " ", startingAt: 0))  \(ok ? "WORKS — windows followed" : "dead")")
+        say("  \(name.padding(toLength: 8, withPad: " ", startingAt: 0))  \(ok ? "WORKS — windows followed" : "dead")")
     }
-    print("  direct    dead (measured separately: counter moves, windows do not)")
+    say("  direct    dead (measured separately: counter moves, windows do not)")
 
 case "direct-full":
-    print("WARNING: same caveat as `direct` — it wedges the desk. Measured dead.")
+    say("NOTE: this is what ActiveSpace itself runs on a single display. On two")
+    say("REAL displays it is untested. If it fails, recover with control+arrow.")
     guard let s = readSpaces() else { exit(1) }
     let target = direction(s) ? s.spaceIDs[s.currentIndex] : s.spaceIDs[s.currentIndex - 2]
     let startID = s.currentID
@@ -378,14 +420,65 @@ case "direct-full":
         directSwitchFull(to: target, from: b.currentID, displayID: b.displayID)
     }
     if let now = readSpaces(), now.currentID != startID {
-        print("     restoring space \(s.currentIndex)...")
+        say("     restoring space \(s.currentIndex)...")
         directSwitchFull(to: startID, from: now.currentID, displayID: now.displayID)
         settle(1.0)
         if let back = readSpaces() {
-            print("     back on space \(back.currentIndex)\(back.currentID == startID ? "" : "  ← RESTORE FAILED")")
+            say("     back on space \(back.currentIndex)\(back.currentID == startID ? "" : "  ← RESTORE FAILED")")
         }
     }
 
+case "sweep":
+    // One Accessibility grant buys a whole experiment. Both unknowns in the
+    // paced recipe are guesses: the value of the "changed" phase (inferred from
+    // Began=1 / Ended=4) and how long the Dock needs between phases. Sweep them
+    // rather than shipping another inference.
+    guard let start = readSpaces() else { exit(1) }
+    say("Sweeping the paced-gesture recipe. Start: space \(start.currentIndex) of \(start.total).")
+    say("Each combination gets one single-space swipe. A hit stops the sweep.")
+    say("")
+
+    let phases: [Int64] = [2, 3, 8, 4]
+    let delays: [UInt32] = [10, 25, 60, 120]
+    var hit: (Int64, UInt32)? = nil
+
+    outer: for ph in phases {
+        for d in delays {
+            guard let s = readSpaces() else { break outer }
+            let before = s.currentID
+            pacedSwipe(right: direction(s), delayMs: d, changedPhase: ph)
+            settle(0.8)
+            guard let after = readSpaces() else { break outer }
+            let moved = after.currentID != before
+            say("  changed=\(ph) delay=\(d)ms  \(moved ? "MOVED" : "no")")
+            if moved { hit = (ph, d); break outer }
+        }
+    }
+
+    say("")
+    if let (ph, d) = hit {
+        say("RESULT: paced gesture works with changedPhase=\(ph), delay=\(d)ms")
+        say("  defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.gestureChangedPhase -int \(ph)")
+        say("  defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.gesturePhaseDelayMs -int \(d)")
+    } else {
+        say("RESULT: no combination moved a space.")
+        say("Pacing is not the answer. The remaining candidate is a real IOHIDEvent")
+        say("attached with SLEventSetIOHIDEvent (the MouseDragFix approach).")
+    }
+
+    if let s = readSpaces() {
+        let before = s.currentID
+        legacySwipe(right: direction(s))
+        settle(0.8)
+        let moved = (readSpaces()?.currentID ?? before) != before
+        say("  control: legacy began+ended  \(moved ? "MOVED (!)" : "no, as expected")")
+    }
+
+    if let now = readSpaces(), now.currentIndex != start.currentIndex {
+        say("")
+        say("You moved from space \(start.currentIndex) to \(now.currentIndex) — switch back by hand.")
+    }
+
 default:
-    print("usage: spaceprobe [report|legacy|paced|direct|direct-full|all] [delayMs] [changedPhase]")
+    say("usage: spaceprobe [report|windows|legacy|paced|direct|direct-full|all|sweep] [delayMs] [changedPhase]")
 }
