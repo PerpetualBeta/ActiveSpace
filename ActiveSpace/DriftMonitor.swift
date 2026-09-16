@@ -14,19 +14,16 @@ enum DriftTrigger: String {
     var isAbsolute: Bool { self == .dockOnVirtual }
 }
 
-/// Subscribes to ReconfigurationObserver, classifies each event against
-/// the drift criteria, and **terminates the app on qualifying drift** so
-/// the launchd keep-alive agent can respawn it with a clean slate. Also
-/// logs before/after fingerprints for diagnostic value.
+/// Subscribes to ReconfigurationObserver, classifies each event against the
+/// drift criteria, and logs before/after fingerprints.
 ///
-/// Restart was demoted to diagnostic-only in commit 041de05 on the theory
-/// that finer-grained mitigations (reconcile + enforceVirtualPosition +
-/// cursor fence) were sufficient. Restored 2026-05-16 after the
-/// mitigations turned out *not* to fully cover the cases users see in
-/// practice (single-display window drift, lingering virtual after
-/// ungraceful exit). Process respawn is the sledgehammer that brings the
-/// app back to known-good state without trying to patch every edge case
-/// in-place.
+/// **Diagnostic only.** It used to terminate the app on qualifying drift so a
+/// launchd keep-alive agent could respawn it with a clean slate. That was
+/// restored in May 2026 for two specific reasons, both of them about the
+/// virtual display: single-display window drift, and a lingering virtual after
+/// an ungraceful exit. The virtual display was removed in the macOS 27 rework,
+/// so there is nothing left to recover from, and quitting yourself when the
+/// user plugs in a monitor is a poor way to behave without one.
 ///
 /// **Cooldown:** a dock-on-virtual restart suppresses the same trigger
 /// for 30s post-respawn (persisted via UserDefaults) so a stuck virtual
@@ -140,25 +137,6 @@ final class DriftMonitor {
         defaults.set(list, forKey: Self.kLastRestartReason)
         defaults.set(Date(), forKey: Self.kLastRestartTime)
 
-        aslog("  verdict=RESTART(\(list))")
-        aslog("Terminating for restart.")
-        // Signal `applicationWillTerminate` to override the default
-        // exit code from 0 to 2. The launchd keep-alive agent's
-        // KeepAlive rule is `SuccessfulExit=false`, which means
-        // "respawn only on non-zero exit" — so a clean
-        // `NSApp.terminate(nil)` (which exits 0) looks like an
-        // intentional user Quit and won't be respawned. Exit 2 keeps
-        // user Quit (exit 0, not respawned) distinguishable from
-        // watchdog-driven restart (exit 2, respawned).
-        WatchdogExit.requested = true
-        NSApp.terminate(nil)
+        aslog("  verdict=DRIFT(\(list))")
     }
-}
-
-/// Shared flag between `DriftMonitor` (which sets it before calling
-/// `NSApp.terminate`) and `AppDelegate.applicationWillTerminate`
-/// (which checks it and forces a non-zero `exit` if true). Lives at
-/// module scope so the two can communicate without owning each other.
-enum WatchdogExit {
-    static var requested = false
 }

@@ -171,11 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // process wasn't started by launchd (user double-clicked the .app),
         // hand off so KeepAlive actually applies — launchd only monitors
         // processes it started itself.
-        registerKeepAliveAgent()
-        if shouldHandOffToLaunchd() {
-            handOffToLaunchdAndExit()
-            return
-        }
+        retireKeepAliveAgent()
 
         SpaceSwitcher.ensureAccessibility()
         loadShortcuts()
@@ -238,74 +234,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Watchdog-initiated termination needs to exit non-zero so the
-        // launchd keep-alive agent (KeepAlive: SuccessfulExit=false)
-        // actually respawns us. User-initiated Quit leaves
-        // `WatchdogExit.requested` false and falls through to the
-        // default exit-0 path, which launchd correctly respects as an
-        // intentional shutdown.
-        if WatchdogExit.requested {
-            aslog("Watchdog-initiated terminate — exit(2) for launchd respawn")
-            exit(2)
-        }
+        aslog("Terminating")
     }
 
     // MARK: - Keep-alive agent
 
     /// Idempotently register the keep-alive agent on every launch.
     ///
-    /// We previously short-circuited on `agentService.status != .notRegistered`,
-    /// but `SMAppService.status` is known to cache stale values — it can report
-    /// `.enabled` even when the Background Task Management (BTM) database has
-    /// no child record for the agent, leaving the parent app row in BTM with
-    /// no child agent attached, and the agent never actually running.
-    /// Generation 47 with a missing child record was diagnosed in the field on
-    /// 2026-05-18 after a watchdog termination found nothing to respawn it.
+    /// Take the old keep-alive agent out of launchd.
     ///
-    /// `SMAppService.register()` is documented as idempotent — calling it when
-    /// the agent really is registered is a no-op, calling it when BTM has lost
-    /// the record recreates the entry. Cheaper than trying to figure out which
-    /// state SMAppService thinks it's in.
-    private func registerKeepAliveAgent() {
-        let priorStatus = agentService.status
+    /// ActiveSpace used to register a launchd agent whose only job was to
+    /// respawn the app after DriftMonitor deliberately killed it. Nothing kills
+    /// it any more, so nothing needs to bring it back, and Launch at Login
+    /// (SMAppService.mainApp, in JorvikKit) covers starting it in the first
+    /// place.
+    ///
+    /// Anyone upgrading still has the agent registered, and launchd would keep
+    /// a record pointing at an app that never registers it again. Unregistering
+    /// is harmless when it was never there.
+    ///
+    /// **The agent plist stays in the bundle, and must.** `SMAppService.agent`
+    /// identifies the service by that plist, so removing the file makes the app
+    /// unable to unregister its own agent: tried on 2026-09-16 and it failed
+    /// with `SMAppServiceErrorDomain` code 22, "Invalid argument". Ship the
+    /// file, never register it, and let this tidy up the old registration. It
+    /// can go once no installed copy still has the agent.
+    private func retireKeepAliveAgent() {
+        let service = SMAppService.agent(plistName: Self.agentPlistName)
+        guard service.status != .notRegistered else { return }
         do {
-            try agentService.register()
-            aslog("Registered keep-alive agent (\(Self.agentPlistName)) — priorStatus=\(priorStatus.rawValue) postStatus=\(agentService.status.rawValue)")
+            try service.unregister()
+            aslog("Retired the old keep-alive agent (\(Self.agentPlistName))")
         } catch {
-            // Both paths so we get the error in the file log AND in Console.app,
-            // since the file log requires `ActiveSpace.debugLogging = YES` and
-            // Console is always available.
-            aslog("agent register failed (priorStatus=\(priorStatus.rawValue)): \(error)")
-            NSLog("ActiveSpace: agent register failed: \(error)")
+            aslog("Could not retire the keep-alive agent: \(error)")
         }
-    }
-
-    /// True when the agent is enabled AND this process was NOT started by
-    /// launchd. launchd injects `XPC_SERVICE_NAME` into the environment of
-    /// jobs it starts — absence of that variable is the reliable signal
-    /// that we're a user-launched instance.
-    private func shouldHandOffToLaunchd() -> Bool {
-        guard agentService.status == .enabled else { return false }
-        let xpcService = ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"]
-        return xpcService != Self.agentLabel
-    }
-
-    /// Ask launchd to kickstart the agent and exit cleanly. The kickstarted
-    /// instance comes up with `XPC_SERVICE_NAME` set and runs normally.
-    /// `terminate(nil)` exits with code 0, which KeepAlive's
-    /// `SuccessfulExit=false` rule correctly ignores.
-    private func handOffToLaunchdAndExit() {
-        aslog("User-launched instance detected; kickstarting launchd-owned instance")
-        let task = Process()
-        task.launchPath = "/bin/launchctl"
-        task.arguments = ["kickstart", "gui/\(getuid())/\(Self.agentLabel)"]
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            NSLog("ActiveSpace: kickstart failed: \(error)")
-        }
-        NSApp.terminate(nil)
     }
 
     // MARK: - Event tap
@@ -594,16 +556,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Activate the app so the popover takes key focus — without this, as an
         // accessory-policy app we don't have focus, so .transient's native Escape
         // and outside-click handling is unreliable.
-        // Logged either side because the menu bar sometimes disappears around
-        // here, and activating an accessory app (which owns no menu bar) is the
-        // likeliest step to disturb it. Measured, not assumed: these three lines
-        // say which step loses the bar.
-        aslog("popover: about to activate, menu bar \(MenuBarWatch.isVisible() ? "visible" : "GONE")")
         NSApp.activate(ignoringOtherApps: true)
-        aslog("popover: activated, menu bar \(MenuBarWatch.isVisible() ? "visible" : "GONE")")
         p.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         p.contentViewController?.view.window?.makeKey()
-        aslog("popover: shown, menu bar \(MenuBarWatch.isVisible() ? "visible" : "GONE")")
         popover = p
 
         // Observe THIS popover only, and drop the registration when it closes.
@@ -619,7 +574,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handlePopoverClosed(_ note: Notification) {
-        aslog("popover: closed, menu bar \(MenuBarWatch.isVisible() ? "visible" : "GONE")")
         if let closed = note.object {
             NotificationCenter.default.removeObserver(self,
                                                       name: NSPopover.didCloseNotification,

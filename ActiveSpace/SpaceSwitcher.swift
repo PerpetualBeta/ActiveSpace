@@ -279,62 +279,6 @@ enum MissionControlShortcuts {
 }
 
 
-/// Watches the menu bar for a few seconds after a switch and logs it if it goes.
-///
-/// The bar's backing window sits at layer 24 and leaves the on-screen window
-/// list whenever the bar is not drawn. Matched on layer and geometry only:
-/// `kCGWindowName` is empty without Screen Recording permission, and owner names
-/// localise. The primitive comes from RainbowApple 2.0.15.
-enum MenuBarWatch {
-
-    static func isVisible() -> Bool {
-        let menuLayer = Int(CGWindowLevelForKey(.mainMenuWindow))
-        guard let raw = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
-                as? [[String: Any]] else { return false }
-        for w in raw {
-            guard let layer = w[kCGWindowLayer as String] as? Int, layer == menuLayer,
-                  let b = w[kCGWindowBounds as String] as? [String: Any],
-                  let y = b["Y"] as? Double,
-                  let width = b["Width"] as? Double else { continue }
-            if abs(y) < 2 {
-                for screen in NSScreen.screens where width >= screen.frame.width / 2 {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
-    /// Sample for `seconds` after a switch, and log only if the bar goes away.
-    /// Silence in the log means it stayed up, which is the answer we want.
-    static func observeAfterSwitch(to index: Int, seconds: Double = 4.0) {
-        guard debugLoggingIsOn else { return }
-        var elapsed = 0.0
-        var goneAt: Double? = nil
-        func tick() {
-            guard elapsed < seconds else {
-                if let goneAt {
-                    aslog(String(format: "MenuBarWatch: after switchTo(%d) the menu bar went at %.2fs and was STILL GONE at %.1fs",
-                                 index, goneAt, seconds))
-                }
-                return
-            }
-            elapsed += 0.1
-            if isVisible() {
-                if let goneAt {
-                    aslog(String(format: "MenuBarWatch: after switchTo(%d) the menu bar went at %.2fs, back after %.2fs",
-                                 index, goneAt, elapsed - goneAt))
-                    return
-                }
-            } else if goneAt == nil {
-                goneAt = elapsed
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: tick)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: tick)
-    }
-}
-
 /// Works out which space to move to, then asks macOS to go there.
 ///
 /// Everything here is index arithmetic plus one call to
@@ -376,7 +320,6 @@ enum SpaceSwitcher {
             aslog("switchTo(\(index)): sending its Mission Control key (code \(binding.keyCode), flags \(binding.flags.rawValue))")
             MissionControlShortcuts.post(binding)
             handBackTheMenuBar(to: index, observer: observer)
-            MenuBarWatch.observeAfterSwitch(to: index)
         case .disabled:
             aslog("switchTo(\(index)): the Mission Control shortcut for this space is switched off")
         case .missing:

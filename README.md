@@ -64,7 +64,7 @@ ActiveSpace no longer competes with macOS's own Mission Control shortcuts. It us
 | File | Purpose |
 |---|---|
 | `ActiveSpaceApp.swift` | `@main` entry; wires `AppDelegate` |
-| `AppDelegate.swift` | Status item, event tap, click routing, popover, settings, keep-alive agent registration |
+| `AppDelegate.swift` | Status item, event tap, click routing, popover, settings |
 | `SpaceObserver.swift` | `@Published` current/total space counts; CGS polling + notifications |
 | `SpaceSwitcher.swift` | Works out which space to move to; `MissionControlShortcuts` reads, sends and enables macOS's own shortcuts |
 | `WindowFollow.swift` | Per-app "follow across spaces" toggle + toast HUD |
