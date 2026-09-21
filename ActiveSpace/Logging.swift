@@ -1,9 +1,8 @@
 import Foundation
 
 /// Diagnostic logging is gated behind the `ActiveSpace.debugLogging` UserDefault.
-/// **Default is OFF** — the drift / virtual-display path has been stable since
-/// 2026-05-21 and the running log is no longer earning its keep. Explicitly
-/// opt in with:
+/// **Default is OFF** — the drift path has been stable since 2026-05-21 and the
+/// running log is no longer earning its keep. Explicitly opt in with:
 ///
 ///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.debugLogging -bool YES
 ///
@@ -16,11 +15,17 @@ private let debugLoggingEnabled: Bool =
 
 private let logFile: FileHandle? = {
     guard debugLoggingEnabled else { return nil }
-    // O_APPEND so every write atomically seeks to EOF. Required because
-    // VirtualDisplayHost (our child process) inherits this file as its
-    // stderr via process.standardError and writes through a different
-    // FD; without O_APPEND on both sides the two processes' writes race
-    // and clobber each other during the helper's startup burst.
+    // O_APPEND so every write atomically seeks to EOF. It was required when
+    // VirtualDisplayHost inherited this file as its stderr and wrote through
+    // its own descriptor: each descriptor carries its own offset, so without
+    // O_APPEND on both sides the two processes clobbered each other during the
+    // helper's startup burst. **That helper is gone** — it went with the virtual
+    // display in the macOS 27 rework (see DriftMonitor) and nothing spawns a
+    // second writer now, so this app is the only thing holding the file.
+    //
+    // The flag stays anyway. It costs nothing, it is the correct way to open a
+    // log whoever else may hold it, and the alternative (seek to end) is the
+    // one that breaks silently the moment a second writer appears again.
     // O_TRUNC starts each app launch with an empty log.
     //
     // ~/Library/Logs/ActiveSpace/, not /tmp: a world-writable directory is the
