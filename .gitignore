@@ -25,3 +25,4 @@ DerivedData/
 # Temp
 *.swp
 *.swo
+.claude/
