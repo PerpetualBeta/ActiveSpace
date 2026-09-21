@@ -29,6 +29,7 @@
 		AA000005 /* JorvikApplicationMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000006 /* JorvikApplicationMenu.swift */; };
 		AA000065 /* JorvikWindowHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000075 /* JorvikWindowHelper.swift */; };
 		AA000066 /* JorvikShortcutRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000076 /* JorvikShortcutRecorder.swift */; };
+		AA0000B01 /* JorvikLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F01 /* JorvikLocalization.swift */; };
 		AA000069 /* Logging.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000082 /* Logging.swift */; };
 		AA000091 /* SwitcherController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000090 /* SwitcherController.swift */; };
 		AA000093 /* SwitcherAppResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000092 /* SwitcherAppResolver.swift */; };
@@ -89,6 +90,7 @@
 		AA000006 /* JorvikApplicationMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikApplicationMenu.swift; sourceTree = "<group>"; };
 		AA000075 /* JorvikWindowHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikWindowHelper.swift; sourceTree = "<group>"; };
 		AA000076 /* JorvikShortcutRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikShortcutRecorder.swift; sourceTree = "<group>"; };
+		AA0000F01 /* JorvikLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JorvikLocalization.swift; sourceTree = "<group>"; };
 		AA000082 /* Logging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging.swift; sourceTree = "<group>"; };
 		AA000090 /* SwitcherController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherController.swift; sourceTree = "<group>"; };
 		AA000092 /* SwitcherAppResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitcherAppResolver.swift; sourceTree = "<group>"; };
@@ -176,6 +178,7 @@
 				AA000006 /* JorvikApplicationMenu.swift */,
 				AA000075 /* JorvikWindowHelper.swift */,
 				AA000076 /* JorvikShortcutRecorder.swift */,
+				AA0000F01 /* JorvikLocalization.swift */,
 				AA000099 /* JorvikHotkeyRegistry.swift */,
 			);
 			path = JorvikKit;
@@ -274,6 +277,7 @@
 				AA000005 /* JorvikApplicationMenu.swift in Sources */,
 				AA000065 /* JorvikWindowHelper.swift in Sources */,
 				AA000066 /* JorvikShortcutRecorder.swift in Sources */,
+				AA0000B01 /* JorvikLocalization.swift in Sources */,
 				AA000098 /* JorvikHotkeyRegistry.swift in Sources */,
 				AA000069 /* Logging.swift in Sources */,
 				AA000091 /* SwitcherController.swift in Sources */,
