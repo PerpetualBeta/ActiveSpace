@@ -831,13 +831,22 @@ private struct ActiveSpaceSettingsContent: View {
 
                 if anythingMissing {
                     VStack(alignment: .leading, spacing: 4) {
-                        Button("Set up the missing shortcuts") {
-                            for row in spaceShortcuts where !row.isReady {
-                                MissionControlShortcuts.enableDesktop(row.index)
+                        // Centred. Trailing was tried and read as a pair with
+                        // the Mission Control button below, which the two are
+                        // not: this one writes the shortcuts, that one opens
+                        // System Settings. The note under it stays left, where
+                        // text reads from.
+                        HStack {
+                            Spacer()
+                            Button("Set up the missing shortcuts") {
+                                for row in spaceShortcuts where !row.isReady {
+                                    MissionControlShortcuts.enableDesktop(row.index)
+                                }
+                                if !isReady(moveLeft) { MissionControlShortcuts.enableMoveLeft() }
+                                if !isReady(moveRight) { MissionControlShortcuts.enableMoveRight() }
+                                refreshSpaceShortcuts()
                             }
-                            if !isReady(moveLeft) { MissionControlShortcuts.enableMoveLeft() }
-                            if !isReady(moveRight) { MissionControlShortcuts.enableMoveRight() }
-                            refreshSpaceShortcuts()
+                            Spacer()
                         }
                         Text("Turns on the Mission Control shortcut for any space that has none, and for the two step shortcuts in Carousel below. Where macOS already knows a key, that key is kept; otherwise control plus the space number is used, which is macOS's own default.")
                             .font(.caption2)
@@ -878,8 +887,18 @@ private struct ActiveSpaceSettingsContent: View {
             }
 
             Section {
-                Button("Open Mission Control shortcuts\u{2026}") {
-                    MissionControlShortcuts.openKeyboardShortcutSettings()
+                VStack(alignment: .leading, spacing: 4) {
+                    // Trailing, so it reads as an action on the two sections
+                    // above rather than a list item starting a new one.
+                    HStack {
+                        Spacer()
+                        Button("Open Mission Control shortcuts\u{2026}") {
+                            MissionControlShortcuts.openKeyboardShortcutSettings()
+                        }
+                    }
+                    Text("Opens System Settings so you can see or change these yourself. Unlike the button above, this one writes nothing.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
 
