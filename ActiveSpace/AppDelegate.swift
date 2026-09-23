@@ -785,56 +785,64 @@ private struct ActiveSpaceSettingsContent: View {
     var body: some View {
         Group {
             Section("Switcher") {
-                Toggle("Space-aware Command-Tab", isOn: Binding(
-                    get: { delegate.switcherEnabled },
-                    set: { delegate.switcherEnabled = $0; delegate.saveSwitcherEnabled() }
-                ))
-                Text("Replaces native Command-Tab with a switcher that only shows apps with windows on the current space. Requires Accessibility (see Permissions below).")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Space-aware Command-Tab", isOn: Binding(
+                        get: { delegate.switcherEnabled },
+                        set: { delegate.switcherEnabled = $0; delegate.saveSwitcherEnabled() }
+                    ))
+                    Text("Replaces native Command-Tab with a switcher that only shows apps with windows on the current space. Requires Accessibility (see Permissions below).")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Grid") {
-                Stepper(value: $rowWidth, in: 0...12) {
-                    Text(rowWidth == 0 ? "Row width: linear"
-                                       : "Row width: \(rowWidth) per row")
+                VStack(alignment: .leading, spacing: 4) {
+                    Stepper(value: $rowWidth, in: 0...12) {
+                        Text(rowWidth == 0 ? "Row width: linear"
+                                           : "Row width: \(rowWidth) per row")
+                    }
+                    .onChange(of: rowWidth) { _, newValue in
+                        delegate.rowWidth = newValue
+                        delegate.saveRowWidth()
+                    }
+                    Text("Lay out the popover as a grid of this width and enable the Navigate Up and Navigate Down keyboard shortcuts. Set to 0 for the original linear strip.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                .onChange(of: rowWidth) { _, newValue in
-                    delegate.rowWidth = newValue
-                    delegate.saveRowWidth()
-                }
-                Text("Lay out the popover as a grid of this width and enable the Navigate Up and Navigate Down keyboard shortcuts. Set to 0 for the original linear strip.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
 
             Section("Navigation") {
-                Toggle("Wrap around at the ends", isOn: Binding(
-                    get: { delegate.wrapAround },
-                    set: { delegate.wrapAround = $0; delegate.saveWrapAround() }
-                ))
-                Text("On: Next from the last space jumps to the first, and Previous from the first jumps to the last. Off: stop at the ends — Previous on the first space and Next on the last space do nothing.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Wrap around at the ends", isOn: Binding(
+                        get: { delegate.wrapAround },
+                        set: { delegate.wrapAround = $0; delegate.saveWrapAround() }
+                    ))
+                    Text("On: Next from the last space jumps to the first, and Previous from the first jumps to the last. Off: stop at the ends, so Previous on the first space and Next on the last space do nothing.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
-            Section("Switching Spaces") {
+            Section("Switching Spaces: Direct Select") {
                 Text("ActiveSpace switches spaces by sending the keyboard shortcut macOS already has for each one, so macOS does the switching. Spaces without a shortcut cannot be reached from the popover.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
                 if anythingMissing {
-                    Button("Set up the missing shortcuts") {
-                        for row in spaceShortcuts where !row.isReady {
-                            MissionControlShortcuts.enableDesktop(row.index)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Button("Set up the missing shortcuts") {
+                            for row in spaceShortcuts where !row.isReady {
+                                MissionControlShortcuts.enableDesktop(row.index)
+                            }
+                            if !isReady(moveLeft) { MissionControlShortcuts.enableMoveLeft() }
+                            if !isReady(moveRight) { MissionControlShortcuts.enableMoveRight() }
+                            refreshSpaceShortcuts()
                         }
-                        if !isReady(moveLeft) { MissionControlShortcuts.enableMoveLeft() }
-                        if !isReady(moveRight) { MissionControlShortcuts.enableMoveRight() }
-                        refreshSpaceShortcuts()
+                        Text("Turns on the Mission Control shortcut for any space that has none, and for the two step shortcuts in Carousel below. Where macOS already knows a key, that key is kept; otherwise control plus the space number is used, which is macOS's own default.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
-                    Text("Turns on the Mission Control shortcut for each space below that has none. Where macOS already knows a key, that key is kept; otherwise control plus the space number is used, which is macOS's own default.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
 
                 ForEach(spaceShortcuts, id: \.index) { row in
@@ -844,10 +852,19 @@ private struct ActiveSpaceSettingsContent: View {
                         shortcutValue(row.status)
                     }
                 }
+            }
 
-                // No Divider here. In a grouped Form every child gets its own
-                // row container, so a divider renders as an empty slot rather
-                // than a line between the two groups.
+            Section("Switching Spaces: Carousel") {
+                // Leading, to match Direct Select above. This explains both rows
+                // rather than either one, so it is not a row caption.
+                Text("These two step one space at a time. ActiveSpace does not send them, it sends the shortcut for the space you picked, but they are listed here because they are how you move by hand.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                // Two separate children, not one VStack. A grouped Form gives
+                // every child its own row container and draws the separator
+                // between them; wrapping both in a VStack makes them one row
+                // and the separator disappears.
                 HStack {
                     Text("Move left a space")
                     Spacer()
@@ -858,10 +875,9 @@ private struct ActiveSpaceSettingsContent: View {
                     Spacer()
                     shortcutValue(moveRight)
                 }
-                Text("These two step one space at a time. ActiveSpace does not send them — it sends the shortcut for the space you picked — but they are listed here because they are how you move by hand.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            }
 
+            Section {
                 Button("Open Mission Control shortcuts\u{2026}") {
                     MissionControlShortcuts.openKeyboardShortcutSettings()
                 }
@@ -882,6 +898,11 @@ private struct ActiveSpaceSettingsContent: View {
                         ),
                         displayString: { delegate.upShortcutDisplayString() },
                         onChanged: { delegate.saveShortcuts() },
+                        onClear: {
+                            delegate.upKeyCode = 0
+                            delegate.upModifiers = []
+                            delegate.saveShortcuts()
+                        },
                         eventTapToDisable: delegate.currentEventTap
                     )
                     JorvikShortcutRecorder(
@@ -896,10 +917,16 @@ private struct ActiveSpaceSettingsContent: View {
                         ),
                         displayString: { delegate.downShortcutDisplayString() },
                         onChanged: { delegate.saveShortcuts() },
+                        onClear: {
+                            delegate.downKeyCode = 0
+                            delegate.downModifiers = []
+                            delegate.saveShortcuts()
+                        },
                         eventTapToDisable: delegate.currentEventTap
                     )
                 }
 
+                VStack(alignment: .leading, spacing: 4) {
                 JorvikShortcutRecorder(
                     label: "Follow App Across Spaces",
                     keyCode: Binding(
@@ -912,42 +939,58 @@ private struct ActiveSpaceSettingsContent: View {
                     ),
                     displayString: { delegate.followShortcutDisplayString() },
                     onChanged: { delegate.saveShortcuts() },
+                    onClear: {
+                        delegate.followKeyCode = 0
+                        delegate.followModifiers = []
+                        delegate.saveShortcuts()
+                    },
                     eventTapToDisable: delegate.currentEventTap
                 )
-                Text("Pins the frontmost app's windows to every Mission Control space — the same effect as right-clicking the Dock icon and choosing Options → Assign To → All Desktops. Toggle off and the app returns to the space it was on when you first toggled it.")
+                Text("Pins the frontmost app's windows to every Mission Control space, the same effect as right-clicking the Dock icon and choosing Options, Assign To, All Desktops. Toggle off and the app returns to the space it was on when you first toggled it.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                }
 
             }
 
             Section("Permissions") {
-                HStack {
-                    Text("Accessibility")
-                    Spacer()
-                    if accessibility.isGranted {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Accessibility")
+                        Spacer()
+                        if accessibility.isGranted {
+                            Label("Granted", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.caption)
+                        } else {
+                            Button("Grant Access") {
+                                SpaceSwitcher.ensureAccessibility()
+                            }
                             .font(.caption)
-                    } else {
-                        Button("Grant Access") {
-                            SpaceSwitcher.ensureAccessibility()
                         }
-                        .font(.caption)
                     }
+                    Text("Always required. ActiveSpace switches spaces by sending a keystroke, and macOS only lets a trusted app do that.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                HStack {
-                    Text("Input Monitoring")
-                    Spacer()
-                    if delegate.currentEventTap != nil {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Input Monitoring")
+                        Spacer()
+                        if delegate.currentEventTap != nil {
+                            Label("Granted", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.caption)
+                        } else {
+                            Button("Grant Access") {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
+                            }
                             .font(.caption)
-                    } else {
-                        Button("Grant Access") {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
                         }
-                        .font(.caption)
                     }
+                    Text("Only needed if you use the keyboard. The listener is created when the Switcher is on, or Follow App Across Spaces is bound, or grid layout is on with an up or down shortcut bound.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
         }

@@ -45,8 +45,10 @@ Right-click the menu-bar bubble and choose **Settings…**:
 - **Switcher** — toggle the space-aware command-Tab replacement.
 - **Grid** — optional row width for the popover layout and the up/down navigation hotkeys.
 - **Navigation** — **Wrap around at the ends** (on by default). Turn it off for a hard stop at the top and bottom of a column.
-- **Switching Spaces** — one row per space, showing the Mission Control shortcut macOS has for it or noting that it has none, with a button that sets up the missing ones and another that opens the Mission Control pane if you would rather do it yourself.
-- **ActiveSpace Shortcuts** — Follow App Across Spaces, plus **Navigate Up** and **Navigate Down** when grid layout is on. These are ActiveSpace's own, because macOS has no equivalent.
+- **Switching Spaces: Direct Select** — one row per space, showing the Mission Control shortcut macOS has for it or noting that it has none, with a button that sets up the missing ones.
+- **Switching Spaces: Carousel** — the two shortcuts that step one space left or right. ActiveSpace does not send these; they are listed because they are how you move by hand.
+- Below both, a button that opens the Mission Control pane if you would rather set these up yourself.
+- **ActiveSpace Shortcuts** — Follow App Across Spaces, plus **Navigate Up** and **Navigate Down** when grid layout is on. These are ActiveSpace's own, because macOS has no equivalent. Each can be cleared as well as changed.
 - **Permissions** — live status of Accessibility and Input Monitoring with grant buttons.
 - **Launch at Login** — start automatically.
 
