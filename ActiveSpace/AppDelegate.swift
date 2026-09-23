@@ -554,13 +554,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
+        // Size the popover before showing it, or it lands in the wrong place.
+        //
+        // AppKit positions a popover from its content size, and an
+        // NSHostingController has not produced one yet at `show` time: SwiftUI
+        // lays out afterwards. The window then ends up the right size in the
+        // wrong position, because the position was worked out from whatever
+        // size AppKit assumed first.
+        //
+        // Measured 2026-09-23. A status item with a plain NSView content places
+        // correctly; the identical popover with SwiftUI content lands at y=1069
+        // against an anchor whose bottom edge is at y=1415. Forcing layout and
+        // handing over `fittingSize` puts the top edge back on 1415 without
+        // changing the window's size at all.
+        //
+        // Nothing to do with `preferredEdge`. That was tried, both ways, and
+        // the placement did not move.
+        if let content = p.contentViewController?.view {
+            content.layoutSubtreeIfNeeded()
+            p.contentSize = content.fittingSize
+        }
+
         // Activate the app so the popover takes key focus — without this, as an
         // accessory-policy app we don't have focus, so .transient's native Escape
         // and outside-click handling is unreliable.
         NSApp.activate(ignoringOtherApps: true)
+
+        // Diagnostic: the popover has been landing ~250 pt below the menu bar.
+        // Log every input AppKit uses to place it, so the wrong one is visible
+        // rather than guessed at.
+        let inWindow = button.convert(button.bounds, to: nil)
+        let onScreen = button.window?.convertToScreen(inWindow)
+        aslog(String(format:
+            "popover anchor: bounds=%.0f,%.0f %.0fx%.0f  inWindow=%.0f,%.0f %.0fx%.0f",
+            button.bounds.origin.x, button.bounds.origin.y, button.bounds.width, button.bounds.height,
+            inWindow.origin.x, inWindow.origin.y, inWindow.width, inWindow.height))
+        aslog(String(format:
+            "popover anchor: onScreen=%@  buttonWindow=%@  isFlipped=%@",
+            onScreen.map { "\(Int($0.origin.x)),\(Int($0.origin.y)) \(Int($0.width))x\(Int($0.height))" } ?? "nil",
+            button.window.map { "\(Int($0.frame.origin.x)),\(Int($0.frame.origin.y)) \(Int($0.frame.width))x\(Int($0.frame.height))" } ?? "nil",
+            button.isFlipped ? "true" : "false"))
+
         p.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         p.contentViewController?.view.window?.makeKey()
         popover = p
+
+        if let w = p.contentViewController?.view.window {
+            aslog(String(format: "popover placed: %.0f,%.0f %.0fx%.0f  screen=%@",
+                         w.frame.origin.x, w.frame.origin.y, w.frame.width, w.frame.height,
+                         w.screen?.localizedName ?? "nil"))
+        }
 
         // Observe THIS popover only, and drop the registration when it closes.
         // The previous version added an observer per popover and never removed
@@ -896,7 +939,10 @@ private struct ActiveSpaceSettingsContent: View {
                             MissionControlShortcuts.openKeyboardShortcutSettings()
                         }
                     }
-                    Text("Opens System Settings so you can see or change these yourself. Unlike the button above, this one writes nothing.")
+                    // No reference to the other button: it is behind `anythingMissing`,
+                    // so once everything is set it is not drawn and "the button
+                    // above" points at nothing.
+                    Text("Opens System Settings so you can see or change these yourself. Nothing here is written for you.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
