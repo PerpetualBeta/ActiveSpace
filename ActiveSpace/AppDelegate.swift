@@ -930,21 +930,18 @@ private struct ActiveSpaceSettingsContent: View {
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    // Trailing, so it reads as an action on the two sections
-                    // above rather than a list item starting a new one.
-                    HStack {
-                        Spacer()
-                        Button("Open Mission Control shortcuts\u{2026}") {
-                            MissionControlShortcuts.openKeyboardShortcutSettings()
-                        }
+                // Trailing, so it reads as an action on the two sections above
+                // rather than a list item starting a new one.
+                //
+                // Deliberately without a note. One was tried and removed: a
+                // right-aligned button with a left-aligned caption underneath
+                // throws the balance of the row off, and the button says what
+                // it does.
+                HStack {
+                    Spacer()
+                    Button("Open Mission Control shortcuts\u{2026}") {
+                        MissionControlShortcuts.openKeyboardShortcutSettings()
                     }
-                    // No reference to the other button: it is behind `anythingMissing`,
-                    // so once everything is set it is not drawn and "the button
-                    // above" points at nothing.
-                    Text("Opens System Settings so you can see or change these yourself. Nothing here is written for you.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
             }
 
