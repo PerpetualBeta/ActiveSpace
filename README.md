@@ -10,6 +10,30 @@ A macOS menu-bar app that shows which Mission Control space you are on, and lets
 - **Optional space-aware command-Tab Switcher** (off by default). When on, `command` `tab` shows only apps with windows on the current space, including minimised windows and windows of hidden apps. Cycle with `tab` or arrows, reverse with `shift` `tab`, commit by releasing `command` or pressing `return`, cancel with `esc`. When off, native `command` `tab` is completely untouched.
 - **Follow app across spaces.** Bind a shortcut to make the frontmost app's windows appear on every Mission Control space, the same effect as the Dock's right-click *Options → Assign To → All Desktops*. Toggle the same shortcut again and the app returns to the space it was on when you first followed it.
 - **Focus follows you.** Arriving on a space brings forward an app that actually lives there, rather than leaving you on a desk with nothing selected.
+- **Name your spaces.** Give any space a name, and the popover shows it the moment you hover a bubble. Two more places to show names are there if you want them, both off by default: the menu bar, and Mission Control itself.
+
+## Space names
+
+Right-click a bubble in the popover and choose **Rename Space…**, or type names into the **Space Names** section of Settings. Clear a name to remove it.
+
+A name belongs to the space, not to its position. macOS sometimes reorders spaces on its own, after a screensaver for example, and the name moves with its space when that happens. Names survive restarts. If a space disappears, after a display change for instance, its name is kept and listed in Settings as *not present*, in case the same space comes back.
+
+Once any space has a name, the popover gains a line under the bubbles. It shows the space under the pointer straight away, and the current space when the pointer is elsewhere. Until then the popover is exactly as it was.
+
+Two optional places to show names, each a switch in Settings:
+
+- **Menu bar.** The bubble reads `3 · Mail` in place of `3`. A space without a name still shows its number alone. Long names are cut short with an ellipsis.
+- **Mission Control.** Each name is drawn over the *Desktop 1*, *Desktop 2* caption under its thumbnail, including the copy of the bar on a second display. macOS offers no way to rename those captions, so ActiveSpace places a small label over each one while Mission Control is open. It checks for Mission Control four times a second while the switch is on, at a cost of about 0.1% of one CPU core, and not at all while it is off.
+
+Two defaults keys fine-tune the display:
+
+```bash
+# Widest a menu-bar name may be, in points (default 160)
+defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.menuBarNameMaxWidth -float 200
+
+# How often to check for Mission Control, in milliseconds (default 250)
+defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.missionControlPollMs -int 250
+```
 
 ## How switching works
 
@@ -42,6 +66,7 @@ Launch ActiveSpace from `/Applications` and grant Accessibility when prompted.
 
 Right-click the menu-bar bubble and choose **Settings…**:
 
+- **Space Names** — a name for each space, the switches for showing names in the menu bar and in Mission Control, and any names kept for spaces that are not present.
 - **Switcher** — toggle the space-aware command-Tab replacement.
 - **Grid** — optional row width for the popover layout and the up/down navigation hotkeys.
 - **Navigation** — **Wrap around at the ends** (on by default). Turn it off for a hard stop at the top and bottom of a column.
@@ -56,7 +81,7 @@ Auto-updates are handled by Sparkle. Use the **Check for Updates…** entry in t
 
 ## Permissions
 
-- **Accessibility** — always required. ActiveSpace switches spaces by sending a keystroke, and macOS only lets a trusted app do that. macOS prompts on first launch.
+- **Accessibility** — always required. ActiveSpace switches spaces by sending a keystroke, and macOS only lets a trusted app do that. macOS prompts on first launch. Names in Mission Control use the same permission to find where each thumbnail is, so they need nothing extra.
 - **Input Monitoring** — only required if you use the keyboard. It exists for the shortcut listener, which is created only when the space-aware Switcher is on, or Follow App Across Spaces is bound, or grid layout is on with an up/down hotkey bound. Turn all of those off and ActiveSpace never asks for it.
 
 ActiveSpace no longer competes with macOS's own Mission Control shortcuts. It uses them, so there is nothing to disable.
@@ -70,8 +95,10 @@ ActiveSpace no longer competes with macOS's own Mission Control shortcuts. It us
 | `SpaceObserver.swift` | `@Published` current/total space counts; CGS polling + notifications |
 | `SpaceSwitcher.swift` | Works out which space to move to; `MissionControlShortcuts` reads, sends and enables macOS's own shortcuts |
 | `WindowFollow.swift` | Per-app "follow across spaces" toggle + toast HUD |
-| `MenuBarIcon.swift` | Numbered bubble rendering |
-| `SpaceSelectorView.swift` | SwiftUI popover (3+ spaces) |
+| `MenuBarIcon.swift` | Numbered bubble rendering, with the space name when that is switched on |
+| `SpaceSelectorView.swift` | SwiftUI popover (3+ spaces), with the hover name line |
+| `SpaceNames.swift` | Space names, keyed by space UUID, and the two display switches |
+| `MissionControlLabels.swift` | Name labels over Mission Control's captions, read from WindowManager's Accessibility tree |
 | `SwitcherController.swift` | State machine for the space-aware command-Tab switcher |
 | `SwitcherHUDWindow.swift` | Borderless HUD with proportional icon scaling |
 | `SwitcherAppResolver.swift` | Per-window space membership via `SLSCopySpacesForWindows`; pre-warmed app-icon cache |
