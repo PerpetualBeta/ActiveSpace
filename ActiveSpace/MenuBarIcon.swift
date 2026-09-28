@@ -5,9 +5,27 @@ import AppKit
 /// automatically adapting to light / dark menu-bar appearance.
 enum MenuBarIcon {
 
-    static func image(for spaceIndex: Int) -> NSImage {
-        let label = "\(spaceIndex)"
+    /// The widest a named bubble's text may be before the name is cut short
+    /// with an ellipsis. A status item grows to fit whatever it is given, and on
+    /// a notched display macOS hides items that no longer fit rather than
+    /// squeezing them, so an unbounded name could push other apps out of the
+    /// menu bar. Tune it live:
+    ///
+    ///   defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.menuBarNameMaxWidth -float 200
+    ///
+    /// The default is about twenty characters of 12 pt semibold, a starting
+    /// point to adjust by eye, not a measured limit.
+    private static var maxTextWidth: CGFloat {
+        (UserDefaults.standard.object(forKey: "ActiveSpace.menuBarNameMaxWidth") as? Double)
+            .map { CGFloat($0) } ?? 160
+    }
+
+    /// `name` is nil unless the user has named this space and turned on
+    /// "Show the name in the menu bar"; the bubble is then the number alone,
+    /// exactly as before.
+    static func image(for spaceIndex: Int, name: String? = nil) -> NSImage {
         let font  = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        let label = name.map { truncated("\(spaceIndex) \u{00B7} \($0)", font: font) } ?? "\(spaceIndex)"
 
         // Measure with a placeholder colour — size is appearance-independent.
         let textSize = (label as NSString).size(withAttributes: [.font: font, .foregroundColor: NSColor.white])
@@ -41,5 +59,20 @@ enum MenuBarIcon {
 
         image.isTemplate = false
         return image
+    }
+
+    /// Shortens `text` from the end, adding an ellipsis, until it fits
+    /// `maxTextWidth`. Drawn with `draw(at:)`, which does not truncate by itself.
+    private static func truncated(_ text: String, font: NSFont) -> String {
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let limit = maxTextWidth
+        guard (text as NSString).size(withAttributes: attrs).width > limit else { return text }
+        var chars = Array(text)
+        while !chars.isEmpty {
+            chars.removeLast()
+            let candidate = String(chars).trimmingCharacters(in: .whitespaces) + "\u{2026}"
+            if (candidate as NSString).size(withAttributes: attrs).width <= limit { return candidate }
+        }
+        return "\u{2026}"
     }
 }

@@ -10,6 +10,8 @@
 		5EF0B3792F95378700E097E2 /* ReconfigurationObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3752F95378700E097E2 /* ReconfigurationObserver.swift */; };
 		5EF0B37A2F95378700E097E2 /* DriftMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3762F95378700E097E2 /* DriftMonitor.swift */; };
 		5EF0B37B2F95378700E097E2 /* SpacesPlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3772F95378700E097E2 /* SpacesPlist.swift */; };
+		5EF0B3A42F95378700E097E2 /* MissionControlLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3A32F95378700E097E2 /* MissionControlLabels.swift */; };
+		5EF0B3A22F95378700E097E2 /* SpaceNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3A12F95378700E097E2 /* SpaceNames.swift */; };
 		5EWF00012FB0000000000001 /* WindowFollow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EWF00022FB0000000000002 /* WindowFollow.swift */; };
 		5EF0B37D2F95378700E097E2 /* ActiveSpaceFingerprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF0B3722F95378700E097E2 /* ActiveSpaceFingerprint.swift */; };
 		5EF0B3802F95380D00E097E2 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5EF0B37F2F95380D00E097E2 /* ServiceManagement.framework */; };
@@ -70,6 +72,8 @@
 		5EF0B3752F95378700E097E2 /* ReconfigurationObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconfigurationObserver.swift; sourceTree = "<group>"; };
 		5EF0B3762F95378700E097E2 /* DriftMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriftMonitor.swift; sourceTree = "<group>"; };
 		5EF0B3772F95378700E097E2 /* SpacesPlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesPlist.swift; sourceTree = "<group>"; };
+		5EF0B3A32F95378700E097E2 /* MissionControlLabels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissionControlLabels.swift; sourceTree = "<group>"; };
+		5EF0B3A12F95378700E097E2 /* SpaceNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceNames.swift; sourceTree = "<group>"; };
 		5EWF00022FB0000000000002 /* WindowFollow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFollow.swift; sourceTree = "<group>"; };
 		5EF0B37F2F95380D00E097E2 /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
 		AA000030 /* ActiveSpaceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSpaceApp.swift; sourceTree = "<group>"; };
@@ -139,6 +143,8 @@
 				5EF0B3752F95378700E097E2 /* ReconfigurationObserver.swift */,
 				5EF0B3762F95378700E097E2 /* DriftMonitor.swift */,
 				5EF0B3772F95378700E097E2 /* SpacesPlist.swift */,
+				5EF0B3A32F95378700E097E2 /* MissionControlLabels.swift */,
+				5EF0B3A12F95378700E097E2 /* SpaceNames.swift */,
 				5EWF00022FB0000000000002 /* WindowFollow.swift */,
 				AA000030 /* ActiveSpaceApp.swift */,
 				AA000031 /* AppDelegate.swift */,
@@ -265,6 +271,8 @@
 				5EF0B3792F95378700E097E2 /* ReconfigurationObserver.swift in Sources */,
 				5EF0B37A2F95378700E097E2 /* DriftMonitor.swift in Sources */,
 				5EF0B37B2F95378700E097E2 /* SpacesPlist.swift in Sources */,
+				5EF0B3A42F95378700E097E2 /* MissionControlLabels.swift in Sources */,
+				5EF0B3A22F95378700E097E2 /* SpaceNames.swift in Sources */,
 				5EF0B37D2F95378700E097E2 /* ActiveSpaceFingerprint.swift in Sources */,
 				AA000053 /* SpaceObserver.swift in Sources */,
 				AA000054 /* SpaceSwitcher.swift in Sources */,

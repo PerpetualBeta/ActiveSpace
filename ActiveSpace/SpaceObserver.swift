@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 /// A single ordered Space entry returned by CGSCopyManagedDisplaySpaces.
-struct SpaceInfo {
+struct SpaceInfo: Equatable {
     let managedSpaceID: Int
     let uuid: String
     let displayIdentifier: String
@@ -15,9 +15,14 @@ final class SpaceObserver: ObservableObject {
 
     @Published private(set) var currentSpaceIndex: Int = 1
     @Published private(set) var totalSpaces: Int = 1
+    /// The current space's UUID, which is what a space name is keyed by.
+    /// Published separately from the index: a reorder can move the current
+    /// space to a new UUID without changing the number shown.
+    @Published private(set) var currentSpaceUUID: String?
 
-    /// All spaces on the active display, in visual order.
-    private(set) var orderedSpaces: [SpaceInfo] = []
+    /// All spaces on the active display, in visual order. Published so the
+    /// Settings list of space names follows spaces being added or removed.
+    @Published private(set) var orderedSpaces: [SpaceInfo] = []
 
     private var cancellables = Set<AnyCancellable>()
     private var pollTimer: Timer?
@@ -97,14 +102,21 @@ final class SpaceObserver: ObservableObject {
 
         let currentID = (chosen["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? Int
 
-        orderedSpaces = spaces
+        // Assign only on change. This runs every two seconds, and a published
+        // write republishes even when the value is the same, which would redraw
+        // the Settings name fields under the user's cursor.
+        if orderedSpaces != spaces { orderedSpaces = spaces }
         totalSpaces = max(1, spaces.count)
 
         if let id = currentID,
            let idx = spaces.firstIndex(where: { $0.managedSpaceID == id }) {
             currentSpaceIndex = idx + 1   // 1-based
+            let uuid = spaces[idx].uuid
+            if currentSpaceUUID != uuid { currentSpaceUUID = uuid }
         } else {
             currentSpaceIndex = 1
+            let uuid = spaces.first?.uuid
+            if currentSpaceUUID != uuid { currentSpaceUUID = uuid }
         }
     }
 

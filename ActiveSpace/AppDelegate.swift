@@ -111,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// count and updates live as spaces are added or removed.
     let observer = SpaceObserver()
     private var popover: NSPopover?
+    private var missionControlLabels: MissionControlLabels?
     private var cancellables = Set<AnyCancellable>()
     let sparkleUserDriverDelegate = ActiveSpaceUserDriverDelegate()
     lazy var sparkleUpdater = SPUStandardUpdaterController(
@@ -227,6 +228,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateIcon() }
             .store(in: &cancellables)
+
+        observer.$currentSpaceUUID
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateIcon() }
+            .store(in: &cancellables)
+
+        // A rename or the menu-bar toggle changes the icon without any space
+        // changing. objectWillChange fires before the new value lands, so the
+        // hop to the main queue is what makes updateIcon read the new one.
+        SpaceNames.shared.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateIcon() }
+            .store(in: &cancellables)
+
+        missionControlLabels = MissionControlLabels()
 
         NotificationCenter.default.publisher(for: .activeSpaceHotkey)
             .receive(on: DispatchQueue.main)
@@ -547,11 +563,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         p.behavior = .transient
         p.animates = true
         p.contentViewController = NSHostingController(
-            rootView: SpaceSelectorView(observer: observer, rowWidth: rowWidth) { [weak self, weak p] index in
-                p?.performClose(nil)
-                guard let self else { return }
-                SpaceSwitcher.switchTo(index: index, observer: self.observer)
-            }
+            rootView: SpaceSelectorView(
+                observer: observer, rowWidth: rowWidth,
+                onSelect: { [weak self, weak p] index in
+                    p?.performClose(nil)
+                    guard let self else { return }
+                    SpaceSwitcher.switchTo(index: index, observer: self.observer)
+                },
+                onRename: { [weak self, weak p] index in
+                    p?.performClose(nil)
+                    self?.renameSpace(index: index)
+                }
+            )
         )
 
         // Size the popover before showing it, or it lands in the wrong place.
@@ -626,6 +649,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover = nil
     }
 
+    // MARK: - Renaming a space
+
+    /// Asks for a new name for the space at `index` (1-based, visual order).
+    /// The name is stored against the space's UUID, read now, so it stays on
+    /// this space even if macOS reorders them while the alert is open.
+    private func renameSpace(index: Int) {
+        guard let space = observer.spaceInfo(forIndex: index) else { return }
+        let names = SpaceNames.shared
+
+        let alert = NSAlert()
+        alert.messageText = "Rename Space \(index)"
+        alert.informativeText = "Leave it empty to remove the name."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(string: names.name(for: space.uuid) ?? "")
+        field.placeholderString = "Space \(index)"
+        // Room for about thirty characters; NSAlert widens itself to fit.
+        field.frame = NSRect(x: 0, y: 0, width: 240, height: field.intrinsicContentSize.height)
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        names.setName(field.stringValue, for: space.uuid)
+    }
+
     // MARK: - Context menu (right-click)
 
     private func showContextMenu() {
@@ -671,7 +721,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Icon
 
     private func updateIcon() {
-        statusItem.button?.image = MenuBarIcon.image(for: observer.currentSpaceIndex)
+        let names = SpaceNames.shared
+        let name = names.showInMenuBar ? observer.currentSpaceUUID.flatMap(names.name(for:)) : nil
+        statusItem.button?.image = MenuBarIcon.image(for: observer.currentSpaceIndex, name: name)
     }
 }
 
@@ -866,6 +918,8 @@ private struct ActiveSpaceSettingsContent: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            SpaceNamesSection(observer: delegate.observer)
 
             Section("Switching Spaces: Direct Select") {
                 Text("ActiveSpace switches spaces by sending the keyboard shortcut macOS already has for each one, so macOS does the switching. Spaces without a shortcut cannot be reached from the popover.")
@@ -1066,6 +1120,70 @@ private struct ActiveSpaceSettingsContent: View {
         .onReceive(NotificationCenter.default.publisher(
             for: NSWindow.didBecomeKeyNotification)) { _ in
             refreshSpaceShortcuts()
+        }
+    }
+}
+
+// MARK: - Space names settings
+
+/// One name field per space on the current display, the two opt-in places a
+/// name can show, and any names whose space is not here right now.
+private struct SpaceNamesSection: View {
+    @ObservedObject var observer: SpaceObserver
+    @ObservedObject private var names = SpaceNames.shared
+
+    /// Names kept for spaces that are not on this display now. Kept rather
+    /// than pruned, because a display change can bring the same UUID back.
+    private var absent: [(uuid: String, name: String)] {
+        let present = Set(observer.orderedSpaces.map(\.uuid))
+        return names.names
+            .filter { !present.contains($0.key) }
+            .map { (uuid: $0.key, name: $0.value) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private func binding(for uuid: String) -> Binding<String> {
+        Binding(
+            get: { names.name(for: uuid) ?? "" },
+            set: { names.setName($0, for: uuid) }
+        )
+    }
+
+    var body: some View {
+        Section("Space Names") {
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Show the name in the menu bar", isOn: $names.showInMenuBar)
+                Text("The menu bar shows the space number and its name, such as 3 \u{00B7} Mail. A space without a name shows the number alone.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Show names in Mission Control", isOn: $names.showInMissionControl)
+                Text("Draws each name over its Desktop caption in Mission Control. Requires Accessibility (see Permissions below).")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(Array(observer.orderedSpaces.enumerated()), id: \.element.uuid) { i, space in
+                // A grouped Form lays a titled TextField out as a row itself,
+                // label leading and field trailing, on one baseline. A
+                // hand-built HStack of Text and a plain field sat the field
+                // higher than its label and let a long name wrap out of the row.
+                TextField("Space \(i + 1)", text: binding(for: space.uuid), prompt: Text("No name"))
+                    .lineLimit(1)
+            }
+
+            ForEach(absent, id: \.uuid) { entry in
+                HStack {
+                    Text(entry.name)
+                    Text("not present")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Remove") { names.removeName(for: entry.uuid) }
+                        .font(.caption)
+                }
+            }
         }
     }
 }
