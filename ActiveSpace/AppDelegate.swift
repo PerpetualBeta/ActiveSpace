@@ -707,7 +707,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         JorvikAboutView.showWindow(
             appName: "ActiveSpace",
             repoName: "ActiveSpace",
-            productPage: "utilities/activespace"
+            productPage: "utilities/activespace",
+            credits: [
+                JorvikCredit(
+                    name: "Johannes Winkelmann",
+                    contribution: L10n.string(
+                        "credits.johannes",
+                        defaultValue: "suggested the grid layout"
+                    ),
+                    url: URL(string: "https://github.com/winkj")
+                )
+            ]
         )
     }
 
