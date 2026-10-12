@@ -13,32 +13,46 @@ import Foundation
 private let debugLoggingEnabled: Bool =
     UserDefaults.standard.bool(forKey: "ActiveSpace.debugLogging")
 
-private let logFile: FileHandle? = {
-    guard debugLoggingEnabled else { return nil }
-    // O_APPEND so every write atomically seeks to EOF. It was required when
-    // VirtualDisplayHost inherited this file as its stderr and wrote through
-    // its own descriptor: each descriptor carries its own offset, so without
-    // O_APPEND on both sides the two processes clobbered each other during the
-    // helper's startup burst. **That helper is gone** — it went with the virtual
-    // display in the macOS 27 rework (see DriftMonitor) and nothing spawns a
-    // second writer now, so this app is the only thing holding the file.
-    //
-    // The flag stays anyway. It costs nothing, it is the correct way to open a
-    // log whoever else may hold it, and the alternative (seek to end) is the
-    // one that breaks silently the moment a second writer appears again.
-    // O_TRUNC starts each app launch with an empty log.
-    //
-    // ~/Library/Logs/ActiveSpace/, not /tmp: a world-writable directory is the
-    // wrong home for anything, and parallel agent jobs share /tmp and clobber
-    // each other's files. Moved 2026-09-15.
-    let dir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/ActiveSpace", isDirectory: true)
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    let path = dir.appendingPathComponent("debug.log").path
-    let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0o644)
+private let logDirectory = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/Logs/ActiveSpace", isDirectory: true)
+private let logURL = logDirectory.appendingPathComponent("debug.log")
+private let previousLogURL = logDirectory.appendingPathComponent("debug.log.1")
+
+/// Rotate once the live log passes this many bytes, keeping one previous
+/// generation, so the most it can occupy is twice this figure. 4 MB by
+/// default, the estate convention; a long debugging session may want more:
+///
+///   defaults write cc.jorviksoftware.ActiveSpace debugLogMaxBytes -int 20971520
+private var logMaximumBytes: Int {
+    let stored = UserDefaults.standard.integer(forKey: "debugLogMaxBytes")
+    return stored > 0 ? stored : 4 * 1024 * 1024
+}
+
+/// The log is kept across launches. It used to be truncated at every launch
+/// (`O_TRUNC`), which wiped the evidence whenever the app relaunched, and an
+/// update install relaunches it: exactly when the Sparkle session it was
+/// recording had just ended. Rotation bounds the size instead.
+///
+/// Opened `O_APPEND`, so every write lands at the end whoever else may hold
+/// the file. When this app spawned a helper that wrote here too, two
+/// descriptors with their own offsets clobbered each other without it. That
+/// helper went with the virtual display in the macOS 27 rework and this app
+/// is the only writer now; the flag stays because it is the correct way to
+/// open a log and costs nothing.
+///
+/// ~/Library/Logs/ActiveSpace/, not /tmp: a world-writable directory is the
+/// wrong home for anything, and parallel agent jobs share /tmp and clobber
+/// each other's files. Moved 2026-09-15.
+private func openLog() -> FileHandle? {
+    try? FileManager.default.createDirectory(at: logDirectory, withIntermediateDirectories: true)
+    let fd = open(logURL.path, O_WRONLY | O_CREAT | O_APPEND, 0o644)
     guard fd >= 0 else { return nil }
     return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-}()
+}
+
+/// Guarded by `logLock`; rotation replaces it.
+nonisolated(unsafe) private var logFile: FileHandle? = debugLoggingEnabled ? openLog() : nil
+private let logLock = NSLock()
 
 private let timestampFormatter: DateFormatter = {
     let f = DateFormatter()
@@ -51,9 +65,24 @@ private let timestampFormatter: DateFormatter = {
 var debugLoggingIsOn: Bool { debugLoggingEnabled }
 
 func aslog(_ msg: String) {
-    guard debugLoggingEnabled, let logFile else { return }
+    guard debugLoggingEnabled else { return }
     let line = "\(timestampFormatter.string(from: Date()))  \(msg)\n"
-    if let data = line.data(using: .utf8) {
-        logFile.write(data)
-    }
+    guard let data = line.data(using: .utf8) else { return }
+    logLock.lock()
+    defer { logLock.unlock() }
+    guard let handle = logFile else { return }
+    handle.write(data)
+    rotateIfTooBig(handle)
+}
+
+/// Called with `logLock` held.
+private func rotateIfTooBig(_ handle: FileHandle) {
+    var info = stat()
+    guard fstat(handle.fileDescriptor, &info) == 0, info.st_size >= logMaximumBytes else { return }
+    logFile = nil
+    try? FileManager.default.removeItem(at: previousLogURL)
+    try? FileManager.default.moveItem(at: logURL, to: previousLogURL)
+    logFile = openLog()
+    let note = "\(timestampFormatter.string(from: Date()))  log rotated at \(info.st_size) bytes; the run before this is in debug.log.1\n"
+    if let data = note.data(using: .utf8) { logFile?.write(data) }
 }

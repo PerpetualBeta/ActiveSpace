@@ -21,6 +21,15 @@ func CGSMainConnectionID() -> CGSConnectionID
 @_silgen_name("CGSCopyManagedDisplaySpaces")
 func CGSCopyManagedDisplaySpaces(_ conn: CGSConnectionID) -> CFArray
 
+/// The spaces a window belongs to. A closed window can still belong to one.
+/// Used only by the Sparkle session diagnostics.
+@_silgen_name("CGSCopySpacesForWindows")
+func CGSCopySpacesForWindows(_ conn: CGSConnectionID, _ mask: Int32, _ windowIDs: CFArray) -> CFArray?
+
+/// The space currently shown on the display with keyboard focus.
+@_silgen_name("CGSGetActiveSpace")
+func CGSGetActiveSpace(_ conn: CGSConnectionID) -> UInt64
+
 // MARK: - SkyLight (SLS) private APIs — loaded via dlsym
 
 import Darwin

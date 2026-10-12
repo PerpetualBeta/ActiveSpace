@@ -744,19 +744,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// `conventions/sparkle-integration.md` §6 for the rationale.
 final class ActiveSpaceUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
     private var sessionObserver: NSObjectProtocol?
+    private var spaceObserver: NSObjectProtocol?
     private var elevatedWindows: [(window: NSWindow, originalLevel: NSWindow.Level)] = []
 
     func standardUserDriverWillShowModalAlert() {
+        logSnapshot("will show modal alert")
         bringForward()
+        logSnapshotsAfterShowing("modal alert")
     }
 
     func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
+        logSnapshot("will show update \(update.displayVersionString) (Sparkle shows it: \(handleShowingUpdate), user initiated: \(state.userInitiated))")
         startFocusGuard()
         bringForward()
+        logSnapshotsAfterShowing("update")
     }
 
     func standardUserDriverWillFinishUpdateSession() {
+        logSnapshot("update session finishing")
         stopFocusGuard()
+    }
+
+    // MARK: Diagnostics
+
+    /// Where Sparkle's windows land, relative to the space the user is on.
+    ///
+    /// Added 2026-10-12 after an update window appeared on another space while
+    /// Jonathan stayed on his. Two explanations were tested and refuted that
+    /// day: no space was a full-screen one, and a window shown after he
+    /// switched spaces mid-launch still came to the space he switched to. So
+    /// this records what actually happens next time instead of guessing a
+    /// third. Off unless `ActiveSpace.debugLogging` is on.
+    private func logSnapshot(_ event: String) {
+        guard debugLoggingIsOn else { return }
+        let conn = CGSMainConnectionID()
+        let windows = NSApp.windows.filter { $0.isVisible }.map { window -> String in
+            let spaces = CGSCopySpacesForWindows(conn, 0x7, [window.windowNumber] as CFArray) as? [UInt64] ?? []
+            return "#\(window.windowNumber) '\(window.title)' \(type(of: window)) level \(window.level.rawValue)"
+                + " key \(window.isKeyWindow) on this space \(window.isOnActiveSpace) spaces \(spaces)"
+        }
+        aslog("sparkle: \(event); active space \(CGSGetActiveSpace(conn)), app active \(NSApp.isActive); "
+              + (windows.isEmpty ? "no visible windows" : windows.joined(separator: " | ")))
+    }
+
+    /// The delegate is told before Sparkle shows its window, so the window may
+    /// not exist yet when it is called. Look again once it has had time to.
+    private func logSnapshotsAfterShowing(_ what: String) {
+        guard debugLoggingIsOn else { return }
+        for delay in [0.5, 2.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.logSnapshot("\(what) +\(delay)s")
+            }
+        }
     }
 
     private func bringForward() {
@@ -771,7 +810,15 @@ final class ActiveSpaceUserDriverDelegate: NSObject, SPUStandardUserDriverDelega
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            self?.logSnapshot("a window became key")
             self?.bringForward()
+        }
+        if debugLoggingIsOn, spaceObserver == nil {
+            spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.logSnapshot("active space changed")
+            }
         }
     }
 
@@ -779,6 +826,10 @@ final class ActiveSpaceUserDriverDelegate: NSObject, SPUStandardUserDriverDelega
         if let obs = sessionObserver {
             NotificationCenter.default.removeObserver(obs)
             sessionObserver = nil
+        }
+        if let obs = spaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(obs)
+            spaceObserver = nil
         }
         for entry in elevatedWindows {
             entry.window.level = entry.originalLevel
