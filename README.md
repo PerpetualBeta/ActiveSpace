@@ -142,7 +142,7 @@ ActiveSpace ships with disk logging off. Enable it for support or self-debugging
 defaults write cc.jorviksoftware.ActiveSpace ActiveSpace.debugLogging -bool YES
 ```
 
-Then quit and relaunch. The log lives at `~/Library/Logs/ActiveSpace/debug.log`. Disable again with `-bool NO` (or `defaults delete`) plus another relaunch.
+Then quit and relaunch. The log lives at `~/Library/Logs/ActiveSpace/debug.log`. It is kept across launches and rolls over to `debug.log.1` once it reaches 4 MB, so it never takes more than about 8 MB. Disable again with `-bool NO` (or `defaults delete`) plus another relaunch.
 
 ---
 
